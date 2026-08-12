@@ -7,7 +7,7 @@ function Home() {
 
   useEffect(() => {
     axios
-      .get("http://localhost:3001/")
+      .get("hello/")
       .then((response) => {
         setMessage(response.data.msg);
       })
@@ -16,7 +16,7 @@ function Home() {
 
   useEffect(() => {
     axios
-      .get("http://localhost:3002/fetchUser")
+      .get("profile/fetchUser")
       .then((response) => {
         setProfile(response.data);
         

@@ -3,17 +3,19 @@ pipeline {
 
     environment {
         AWS_REGION = 'us-east-1'
-        AWS_PAGER = ''
 
         FRONTEND_REPO = 'streaming-frontend'
         HELLO_REPO = 'streaming-hello-service'
         PROFILE_REPO = 'streaming-profile-service'
+
+        AWS_CREDENTIALS_ID = 'aws-ecr-credentials'
     }
 
     stages {
 
         stage('Checkout') {
             steps {
+                echo 'Checking out source code from GitHub...'
                 checkout scm
             }
         }
@@ -21,31 +23,47 @@ pipeline {
         stage('Get AWS Account ID') {
             steps {
                 script {
-                    env.AWS_ACCOUNT_ID = sh(
-                        script: 'aws sts get-caller-identity --query Account --output text --no-cli-pager',
-                        returnStdout: true
-                    ).trim()
+                    withCredentials([
+                        usernamePassword(
+                            credentialsId: env.AWS_CREDENTIALS_ID,
+                            usernameVariable: 'AWS_ACCESS_KEY_ID',
+                            passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                        )
+                    ]) {
 
-                    env.ECR_REGISTRY =
-                        "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
+                        env.AWS_ACCOUNT_ID = sh(
+                            script: '''
+                                aws sts get-caller-identity \
+                                  --query Account \
+                                  --output text \
+                                  --no-cli-pager
+                            ''',
+                            returnStdout: true
+                        ).trim()
 
-                    env.FRONTEND_IMAGE =
-                        "${env.ECR_REGISTRY}/${env.FRONTEND_REPO}"
+                        env.ECR_REGISTRY =
+                            "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
 
-                    env.HELLO_IMAGE =
-                        "${env.ECR_REGISTRY}/${env.HELLO_REPO}"
+                        env.FRONTEND_IMAGE =
+                            "${env.ECR_REGISTRY}/${env.FRONTEND_REPO}"
 
-                    env.PROFILE_IMAGE =
-                        "${env.ECR_REGISTRY}/${env.PROFILE_REPO}"
+                        env.HELLO_IMAGE =
+                            "${env.ECR_REGISTRY}/${env.HELLO_REPO}"
 
-                    echo "AWS Account ID: ${env.AWS_ACCOUNT_ID}"
-                    echo "ECR Registry: ${env.ECR_REGISTRY}"
+                        env.PROFILE_IMAGE =
+                            "${env.ECR_REGISTRY}/${env.PROFILE_REPO}"
+
+                        echo "AWS Account ID: ${env.AWS_ACCOUNT_ID}"
+                        echo "ECR Registry: ${env.ECR_REGISTRY}"
+                    }
                 }
             }
         }
 
         stage('Build Frontend Image') {
             steps {
+                echo 'Building Frontend Docker image...'
+
                 sh '''
                     docker build \
                       -t ${FRONTEND_REPO}:${BUILD_NUMBER} \
@@ -56,6 +74,8 @@ pipeline {
 
         stage('Build Hello Service Image') {
             steps {
+                echo 'Building Hello Service Docker image...'
+
                 sh '''
                     docker build \
                       -t ${HELLO_REPO}:${BUILD_NUMBER} \
@@ -66,6 +86,8 @@ pipeline {
 
         stage('Build Profile Service Image') {
             steps {
+                echo 'Building Profile Service Docker image...'
+
                 sh '''
                     docker build \
                       -t ${PROFILE_REPO}:${BUILD_NUMBER} \
@@ -76,19 +98,31 @@ pipeline {
 
         stage('Login to Amazon ECR') {
             steps {
-                sh '''
-                    aws ecr get-login-password \
-                      --region ${AWS_REGION} \
-                      --no-cli-pager |
-                    docker login \
-                      --username AWS \
-                      --password-stdin ${ECR_REGISTRY}
-                '''
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: env.AWS_CREDENTIALS_ID,
+                        usernameVariable: 'AWS_ACCESS_KEY_ID',
+                        passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                    )
+                ]) {
+
+                    sh '''
+                        echo "Logging in to Amazon ECR..."
+
+                        aws ecr get-login-password \
+                          --region ${AWS_REGION} |
+                        docker login \
+                          --username AWS \
+                          --password-stdin ${ECR_REGISTRY}
+                    '''
+                }
             }
         }
 
         stage('Tag Images') {
             steps {
+                echo 'Tagging Docker images for ECR...'
+
                 sh '''
                     docker tag \
                       ${FRONTEND_REPO}:${BUILD_NUMBER} \
@@ -107,6 +141,8 @@ pipeline {
 
         stage('Push Images to ECR') {
             steps {
+                echo 'Pushing Docker images to Amazon ECR...'
+
                 sh '''
                     docker push ${FRONTEND_IMAGE}:${BUILD_NUMBER}
 
@@ -122,8 +158,8 @@ pipeline {
 
         success {
             echo '=============================================='
-            echo 'CI PIPELINE COMPLETED SUCCESSFULLY'
-            echo 'All three images have been pushed to ECR.'
+            echo 'CI PIPELINE SUCCESSFUL'
+            echo 'All Docker images were pushed to Amazon ECR.'
             echo '=============================================='
         }
 

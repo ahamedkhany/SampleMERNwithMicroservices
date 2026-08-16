@@ -8,7 +8,7 @@ app.use(cors())
 
 
 app.use(express.json());
-app.get('/', (req,res)=>{
+app.get('/hello', (req,res)=>{
     res.send({msg: 'Hello World'})
 })
 app.get('/health', (req,res)=>{

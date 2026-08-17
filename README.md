@@ -1682,6 +1682,14 @@ No manual **Build Now** action is required after the webhook is working.
 
 -------------------------------------------------
 
+## AWS Secrets Manager
+
+![Secrets Manager](./screenshots/aws-secrets-manager.png)
+
+
+-------------------------------------------------
+
+
 ## Check EKS Nodes
 
 ```bash

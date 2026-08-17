@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: profile-service
+  namespace: default
+spec:
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: profile-service
+
+  template:
+    metadata:
+      labels:
+        app: profile-service
+
+    spec:
+      # Uses the IAM role associated through EKS Pod Identity
+      serviceAccountName: profile-service
+
+      containers:
+        - name: profile-service
+          image: 533612070969.dkr.ecr.us-east-1.amazonaws.com/streaming-profile-service:latest
+
+          ports:
+            - containerPort: 3002
+
+          env:
+            - name: PORT
+              value: "3002"
+
+            - name: MONGO_URL
+              valueFrom:
+                secretKeyRef:
+                  name: profile-service-secret
+                  key: MONGO_URL
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "128Mi"
+
+          volumeMounts:
+            - name: secrets-store-inline
+              mountPath: "/mnt/secrets-store"
+              readOnly: true
+
+      volumes:
+        - name: secrets-store-inline
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+
+            volumeAttributes:
+              secretProviderClass: profile-service-secrets

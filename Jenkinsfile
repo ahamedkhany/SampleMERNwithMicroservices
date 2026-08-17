@@ -5,24 +5,61 @@ pipeline {
         AWS_REGION = 'us-east-1'
 
         FRONTEND_REPO = 'streaming-frontend'
-        HELLO_REPO = 'streaming-hello-service'
-        PROFILE_REPO = 'streaming-profile-service'
+        HELLO_REPO    = 'streaming-hello-service'
+        PROFILE_REPO  = 'streaming-profile-service'
 
         AWS_CREDENTIALS_ID = 'aws-ecr-credentials'
+
+        EKS_CLUSTER_NAME = 'container-orch-cluster'
+
+        K8S_MANIFEST_PATH = 'infrastructure/eks/manifests'
     }
 
     stages {
 
+        // ============================================================
+        // CI - SOURCE CODE
+        // ============================================================
+
         stage('Checkout') {
             steps {
                 echo 'Checking out source code from GitHub...'
+
                 checkout scm
             }
         }
 
+        stage('Generate Image Version') {
+            steps {
+                script {
+
+                    env.GIT_COMMIT_SHORT = sh(
+                        script: 'git rev-parse --short HEAD',
+                        returnStdout: true
+                    ).trim()
+
+                    env.IMAGE_TAG =
+                        "build-${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
+
+                    echo "=============================================="
+                    echo "IMAGE VERSION"
+                    echo "=============================================="
+                    echo "Jenkins Build : ${env.BUILD_NUMBER}"
+                    echo "Git Commit    : ${env.GIT_COMMIT_SHORT}"
+                    echo "Image Tag     : ${env.IMAGE_TAG}"
+                    echo "=============================================="
+                }
+            }
+        }
+
+        // ============================================================
+        // CI - AWS / ECR INFORMATION
+        // ============================================================
+
         stage('Get AWS Account ID') {
             steps {
                 script {
+
                     withCredentials([
                         usernamePassword(
                             credentialsId: env.AWS_CREDENTIALS_ID,
@@ -53,12 +90,16 @@ pipeline {
                         env.PROFILE_IMAGE =
                             "${env.ECR_REGISTRY}/${env.PROFILE_REPO}"
 
-                        echo "AWS Account ID: ${env.AWS_ACCOUNT_ID}"
-                        echo "ECR Registry: ${env.ECR_REGISTRY}"
+                        echo "AWS Account ID : ${env.AWS_ACCOUNT_ID}"
+                        echo "ECR Registry   : ${env.ECR_REGISTRY}"
                     }
                 }
             }
         }
+
+        // ============================================================
+        // CI - DOCKER BUILD
+        // ============================================================
 
         stage('Build Frontend Image') {
             steps {
@@ -66,7 +107,7 @@ pipeline {
 
                 sh '''
                     docker build \
-                      -t ${FRONTEND_REPO}:${BUILD_NUMBER} \
+                      -t ${FRONTEND_REPO}:${IMAGE_TAG} \
                       ./frontend
                 '''
             }
@@ -78,7 +119,7 @@ pipeline {
 
                 sh '''
                     docker build \
-                      -t ${HELLO_REPO}:${BUILD_NUMBER} \
+                      -t ${HELLO_REPO}:${IMAGE_TAG} \
                       ./backend/helloService
                 '''
             }
@@ -90,14 +131,19 @@ pipeline {
 
                 sh '''
                     docker build \
-                      -t ${PROFILE_REPO}:${BUILD_NUMBER} \
+                      -t ${PROFILE_REPO}:${IMAGE_TAG} \
                       ./backend/profileService
                 '''
             }
         }
 
+        // ============================================================
+        // CI - ECR LOGIN
+        // ============================================================
+
         stage('Login to Amazon ECR') {
             steps {
+
                 withCredentials([
                     usernamePassword(
                         credentialsId: env.AWS_CREDENTIALS_ID,
@@ -119,59 +165,279 @@ pipeline {
             }
         }
 
-        stage('Tag Images') {
+        // ============================================================
+        // CI - TAG FOR ECR
+        // ============================================================
+
+        stage('Tag Images for ECR') {
             steps {
-                echo 'Tagging Docker images for ECR...'
+
+                echo 'Tagging Docker images for Amazon ECR...'
 
                 sh '''
                     docker tag \
-                      ${FRONTEND_REPO}:${BUILD_NUMBER} \
-                      ${FRONTEND_IMAGE}:${BUILD_NUMBER}
+                      ${FRONTEND_REPO}:${IMAGE_TAG} \
+                      ${FRONTEND_IMAGE}:${IMAGE_TAG}
 
                     docker tag \
-                      ${HELLO_REPO}:${BUILD_NUMBER} \
-                      ${HELLO_IMAGE}:${BUILD_NUMBER}
+                      ${HELLO_REPO}:${IMAGE_TAG} \
+                      ${HELLO_IMAGE}:${IMAGE_TAG}
 
                     docker tag \
-                      ${PROFILE_REPO}:${BUILD_NUMBER} \
-                      ${PROFILE_IMAGE}:${BUILD_NUMBER}
+                      ${PROFILE_REPO}:${IMAGE_TAG} \
+                      ${PROFILE_IMAGE}:${IMAGE_TAG}
                 '''
             }
         }
 
+        // ============================================================
+        // CI - PUSH TO ECR
+        // ============================================================
+
         stage('Push Images to ECR') {
             steps {
+
                 echo 'Pushing Docker images to Amazon ECR...'
 
                 sh '''
-                    docker push ${FRONTEND_IMAGE}:${BUILD_NUMBER}
+                    docker push ${FRONTEND_IMAGE}:${IMAGE_TAG}
 
-                    docker push ${HELLO_IMAGE}:${BUILD_NUMBER}
+                    docker push ${HELLO_IMAGE}:${IMAGE_TAG}
 
-                    docker push ${PROFILE_IMAGE}:${BUILD_NUMBER}
+                    docker push ${PROFILE_IMAGE}:${IMAGE_TAG}
+                '''
+            }
+        }
+
+        // ============================================================
+        // CD - CONFIGURE EKS
+        // ============================================================
+
+        stage('Configure Kubernetes') {
+            steps {
+
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: env.AWS_CREDENTIALS_ID,
+                        usernameVariable: 'AWS_ACCESS_KEY_ID',
+                        passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                    )
+                ]) {
+
+                    sh '''
+                        echo "Configuring kubectl for EKS..."
+
+                        aws eks update-kubeconfig \
+                          --region ${AWS_REGION} \
+                          --name ${EKS_CLUSTER_NAME}
+
+                        echo ""
+                        echo "Current Kubernetes context:"
+                        kubectl config current-context
+
+                        echo ""
+                        echo "EKS Nodes:"
+                        kubectl get nodes
+                    '''
+                }
+            }
+        }
+
+        // ============================================================
+        // CD - APPLY KUBERNETES MANIFESTS
+        // ============================================================
+
+        stage('Apply Kubernetes Manifests') {
+            steps {
+
+                echo "Applying Kubernetes manifests from ${K8S_MANIFEST_PATH}..."
+
+                sh '''
+                    kubectl apply \
+                      -f ${K8S_MANIFEST_PATH}
+                '''
+            }
+        }
+
+        // ============================================================
+        // CD - DEPLOY EXACT IMAGE VERSION
+        // ============================================================
+
+        stage('Deploy Exact Image Version') {
+            steps {
+
+                echo "Deploying exact image version: ${IMAGE_TAG}"
+
+                sh '''
+                    echo "Updating Frontend deployment..."
+
+                    kubectl set image deployment/frontend \
+                      frontend=${FRONTEND_IMAGE}:${IMAGE_TAG}
+
+                    echo ""
+                    echo "Updating Hello Service deployment..."
+
+                    kubectl set image deployment/hello-service \
+                      hello-service=${HELLO_IMAGE}:${IMAGE_TAG}
+
+                    echo ""
+                    echo "Updating Profile Service deployment..."
+
+                    kubectl set image deployment/profile-service \
+                      profile-service=${PROFILE_IMAGE}:${IMAGE_TAG}
+                '''
+            }
+        }
+
+        // ============================================================
+        // CD - ROLLOUT
+        // ============================================================
+
+        stage('Wait for Rollout') {
+            steps {
+
+                echo 'Waiting for Kubernetes deployments to complete...'
+
+                sh '''
+                    echo "Frontend rollout..."
+
+                    kubectl rollout status \
+                      deployment/frontend \
+                      --timeout=300s
+
+                    echo ""
+                    echo "Hello Service rollout..."
+
+                    kubectl rollout status \
+                      deployment/hello-service \
+                      --timeout=300s
+
+                    echo ""
+                    echo "Profile Service rollout..."
+
+                    kubectl rollout status \
+                      deployment/profile-service \
+                      --timeout=300s
+                '''
+            }
+        }
+
+        // ============================================================
+        // CD - VALIDATION
+        // ============================================================
+
+        stage('Validate Deployment') {
+            steps {
+
+                sh '''
+                    echo "================================================"
+                    echo "KUBERNETES DEPLOYMENT VALIDATION"
+                    echo "================================================"
+
+                    echo ""
+                    echo "Deployments:"
+                    kubectl get deployments
+
+                    echo ""
+                    echo "Pods:"
+                    kubectl get pods -o wide
+
+                    echo ""
+                    echo "Services:"
+                    kubectl get services
+
+                    echo ""
+                    echo "Ingress:"
+                    kubectl get ingress
+
+                    echo ""
+                    echo "------------------------------------------------"
+                    echo "DEPLOYED IMAGES"
+                    echo "------------------------------------------------"
+
+                    echo ""
+                    echo "Frontend:"
+                    kubectl get deployment/frontend \
+                      -o jsonpath='{.spec.template.spec.containers[0].image}'
+                    echo ""
+
+                    echo ""
+                    echo "Hello Service:"
+                    kubectl get deployment/hello-service \
+                      -o jsonpath='{.spec.template.spec.containers[0].image}'
+                    echo ""
+
+                    echo ""
+                    echo "Profile Service:"
+                    kubectl get deployment/profile-service \
+                      -o jsonpath='{.spec.template.spec.containers[0].image}'
+                    echo ""
+
+                    echo ""
+                    echo "------------------------------------------------"
+                    echo "EXPECTED IMAGE TAG"
+                    echo "------------------------------------------------"
+
+                    echo "${IMAGE_TAG}"
+
+                    echo ""
+                    echo "================================================"
                 '''
             }
         }
     }
 
+    // ================================================================
+    // POST ACTIONS
+    // ================================================================
+
     post {
 
         success {
-            echo '=============================================='
-            echo 'CI PIPELINE SUCCESSFUL'
-            echo 'All Docker images were pushed to Amazon ECR.'
-            echo '=============================================='
+
+            echo '''
+            ============================================================
+                         CI/CD PIPELINE SUCCESSFUL
+            ============================================================
+
+            Source code checked out successfully.
+
+            Docker images built successfully.
+
+            Images pushed to Amazon ECR.
+
+            Kubernetes manifests applied successfully.
+
+            Exact Jenkins build image deployed to EKS.
+
+            Kubernetes rollouts completed successfully.
+
+            Deployment validation completed successfully.
+
+            Application is ready for browser testing.
+
+            ============================================================
+            '''
         }
 
         failure {
-            echo '=============================================='
-            echo 'CI PIPELINE FAILED'
-            echo 'Check the Jenkins Console Output.'
-            echo '=============================================='
+
+            echo '''
+            ============================================================
+                           CI/CD PIPELINE FAILED
+            ============================================================
+
+            Check the Jenkins Console Output for the failed stage.
+
+            ============================================================
+            '''
         }
 
         always {
+
             sh '''
+                echo "Cleaning unused Docker images..."
+
                 docker image prune -f || true
             '''
         }

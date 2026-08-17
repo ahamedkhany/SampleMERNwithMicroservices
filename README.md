@@ -1,318 +1,173 @@
-# MERN Microservices — AWS EKS Container Orchestration
+# Container Orchestration CI/CD Pipeline
 
 ## 1. Project Overview
 
-This project demonstrates the containerization, CI/CD automation, deployment, monitoring, logging, secret management, ingress routing, and autoscaling of a MERN-based microservices application on **Amazon Web Services (AWS)** using::
+This project implements a complete **CI/CD pipeline for a MERN-based microservices application** using Jenkins, Docker, Amazon ECR, Amazon EKS, and Kubernetes.
 
-* Docker
-* Amazon ECR
-* Jenkins
-* Amazon EKS
-* Kubernetes
-* AWS Application Load Balancer (ALB)
-* AWS Secrets Manager
-* EKS Pod Identity
+The pipeline automates the complete application lifecycle:
+
+```text
+Developer
+   |
+   | Git Push
+   v
+GitHub
+   |
+   | Webhook
+   v
+Jenkins
+   |
+   +---- CI ----> Build Docker Images
+   |                  |
+   |                  v
+   |              Amazon ECR
+   |
+   +---- CD ----> Amazon EKS
+                      |
+                      v
+                  Kubernetes
+                      |
+                      v
+                  Application
+```
+
+The final implementation supports:
+
+* Automated CI using Jenkins
+* Docker image creation
+* Amazon ECR image storage
+* Dynamic image versioning using Jenkins `BUILD_NUMBER`
+* Automated CD to Amazon EKS
+* Kubernetes Deployments, Services, Ingress and HPA
+* AWS Secrets Manager integration
 * Secrets Store CSI Driver
-* Amazon CloudWatch / Container Insights
-* Kubernetes Metrics Server
-* Horizontal Pod Autoscaler (HPA)
-* MongoDB Atlas
-
-The application consists of three services:
-
-1. **Frontend** — React application served through Nginx
-2. **Hello Service** — Node.js/Express microservice
-3. **Profile Service** — Node.js/Express + MongoDB microservice
+* EKS Pod Identity
+* Amazon Load Balancer Controller
+* EKS Access Entry for Jenkins
+* Kubernetes RBAC for Jenkins
+* Automated rollout validation
+* GitHub Webhook-triggered deployments
 
 ---
 
-# 2. Architecture
+# 2. Application Architecture
+
+The application consists of three main components:
 
 ```text
-                              Internet
-                                  |
-                                  v
-                       AWS Application Load Balancer
-                                  |
-                         Kubernetes Ingress
-                                  |
-              +-------------------+-------------------+
-              |                   |                   |
-              v                   v                   v
-            /hello         /profile/fetchUser         /
-              |                fetchUser              |
-              v                   |                   v
-       Hello Service              |                Frontend
-          :3001                   v                  :80
-                           Profile Service
-                                :3002
-                                  |
-                                  v
-                             MongoDB Atlas
-```
-
-### AWS / Kubernetes Architecture
-
-```text
-                         AWS
-                          |
-                +---------+---------+
-                |       EKS        |
-                |                  |
-                |  3/4 Worker Nodes|
-                |                  |
-                |  +------------+  |
-                |  | Frontend   |  |
-                |  | 2-4 Pods   |  |
-                |  +------------+  |
-                |                  |
-                |  +------------+  |
-                |  | Hello      |  |
-                |  | 2-4 Pods   |  |
-                |  +------------+  |
-                |                  |
-                |  +------------+  |
-                |  | Profile    |  |
-                |  | 2-4 Pods   |  |
-                |  +------------+  |
-                |                  |
-                +------------------+
-                          |
-                     ALB Ingress
-                          |
                        Internet
+                           |
+                           v
+                    Application Load
+                       Balancer
+                           |
+                           v
+               AWS Load Balancer Controller
+                           |
+                           v
+                    Kubernetes Ingress
+                           |
+              +------------+------------+
+              |                         |
+              v                         v
+          Frontend                  Backend Services
+                                      |
+                           +----------+----------+
+                           |                     |
+                           v                     v
+                    Hello Service        Profile Service
+                                                |
+                                                v
+                                      AWS Secrets Manager
+                                                |
+                                                v
+                                          MongoDB Atlas
 ```
+
+### Application Components
+
+| Component                    | Technology                  | Purpose                                                          |
+| ---------------------------- | --------------------------- | ---------------------------------------------------------------- |
+| Frontend                     | React                       | User interface                                                   |
+| Hello Service                | Node.js / Express           | Backend service                                                  |
+| Profile Service              | Node.js / Express / MongoDB | User/profile operations                                          |
+| Ingress                      | Kubernetes                  | Defines external HTTP/HTTPS routing                              |
+| Application Load Balancer    | AWS                         | External entry point for application traffic                     |
+| AWS Load Balancer Controller | Kubernetes/AWS              | Creates and manages AWS Load Balancers from Kubernetes resources |
+| HPA                          | Kubernetes                  | Automatic Pod scaling                                            |
+| AWS Secrets Manager          | AWS                         | Secure secret storage                                            |
+| Secrets Store CSI Driver     | Kubernetes                  | Makes AWS secrets available to Pods                              |
 
 ---
 
-# 3. Application Components
+# 3. Repository Structure
 
-## Frontend
-
-Technology:
-
-* React
-* Axios
-* Nginx
-
-The frontend calls:
+The project follows this structure:
 
 ```text
-/hello/
-```
-
-and:
-
-```text
-/profile/fetchUser
-```
-
-through the ALB Ingress.
-
----
-
-## Hello Service
-
-Technology:
-
-* Node.js
-* Express
-
-Port:
-
-```text
-3001
-```
-
-Endpoint:
-
-```text
-GET /hello
-```
-
-Example response:
-
-```json
-{
-  "msg": "Hello World"
-}
-```
-
----
-
-## Profile Service
-
-Technology:
-
-* Node.js
-* Express
-* Mongoose
-* MongoDB Atlas
-
-Port:
-
-```text
-3002
-```
-
-Endpoint:
-
-```text
-GET /profile/fetchUser
-```
-
-The service retrieves users from MongoDB Atlas.
-
----
-
-# 4. Repository Structure
-
-The project follows a structure similar to:
-
-```text
-SampleMERNwithMicroservices/
+.
+├── Jenkinsfile
 │
 ├── frontend/
 │   ├── Dockerfile
-│   ├── package.json
-│   └── src/
-│       └── Home.js
+│   └── ...
 │
-├── helloService/
-│   ├── Dockerfile
-│   ├── package.json
-│   └── index.js
+├── backend/
+│   ├── helloService/
+│   │   ├── Dockerfile
+│   │   └── ...
+│   │
+│   └── profileService/
+│       ├── Dockerfile
+│       └── ...
 │
-├── profileService/
-│   ├── Dockerfile
-│   ├── package.json
-│   └── index.js
-│
-├── infrastructure/
-│   └── eks/
-│       │ 
-│       ├── cluster.yaml
-│       ├── cloudwatch-trust-policy.json
-│       ├── iam_policy.json
-│       ├── pod-identity-trust-policy.json
-│       ├── secrets-manager-policy.json
-│       └── manifests/
-│           ├── frontend-deployment.yaml
-│           ├── hello-deployment.yaml
-│           ├── profile-deployment.yaml
-│           ├── frontend-service.yaml
-│           ├── hello-service.yaml
-│           ├── profile-service.yaml
-│           ├── ingress.yaml
-│           ├── frontend-hpa.yaml
-│           ├── hello-service-hpa.yaml
-│           ├── profile-service-hpa.yaml
-│           └── profile-secrets.yaml (SecretProviderClass)
-│       
-├── .gitignore  
-├── README.md    
-└── Jenkinsfile
+└── infrastructure/
+    └── eks/
+        ├── manifests/
+        │   ├── frontend-deployment.yaml
+        │   ├── frontend-service.yaml
+        │   ├── frontend-hpa.yaml
+        │   ├── hello-service-deployment.yaml
+        │   ├── hello-service-service.yaml
+        │   ├── hello-service-hpa.yaml
+        │   ├── profile-service-deployment.yaml
+        │   ├── profile-service-service.yaml
+        │   ├── profile-service-hpa.yaml
+        │   ├── profile-secrets.yaml
+        │   └── ingress.yaml
+        │
+        └── rbac/
+            ├── jenkins-secretproviderclass-role.yaml
+            └── jenkins-secretproviderclass-binding.yaml
 ```
+
+The `manifests` directory contains application deployment configuration.
+
+The `rbac` directory contains Jenkins Kubernetes authorization configuration.
+
+This separation keeps **application configuration** and **deployment-platform security configuration** independent.
 
 ---
 
-# 5. Prerequisites
+# 4. AWS Region and EKS Cluster
 
-Install/configure the following:
-
-* AWS CLI
-* kubectl
-* eksctl
-* Docker
-* Jenkins
-* Git
-* Node.js
-* npm
-* MongoDB Atlas account
-
-Verify:
-
-```powershell
-aws --version
-kubectl version --client
-eksctl version
-docker --version
-git --version
-node --version
-npm --version
-```
-
----
-
-# 6. AWS Configuration
-
-AWS Region used:
+The application is deployed to:
 
 ```text
+AWS Region:
 us-east-1
+
+EKS Cluster:
+container-orch-cluster
 ```
 
-Verify AWS credentials:
-
-```powershell
-aws sts get-caller-identity
-```
-
-Example account:
-
-```text
-533612070969
-```
+The EKS cluster provides the Kubernetes control plane and worker nodes required to run the application.
 
 ---
 
-# 7. Docker Containerization
+# 5. Amazon ECR Repositories
 
-Each application component was containerized separately.
-
-## Frontend Docker Image
-
-The frontend was built into a Docker image and served through Nginx.
-
-## Hello Service Docker Image
-
-The Hello Service was containerized and exposed on:
-
-```text
-3001
-```
-
-## Profile Service Docker Image
-
-The Profile Service was containerized and exposed on:
-
-```text
-3002
-```
-
----
-
-# 8. Local Docker Testing
-
-Before pushing images to ECR, each service was tested locally.
-
-Example:
-
-```powershell
-docker build -t hello-service .
-docker build -t profile-service .
-docker build -t frontend .
-```
-
-Containers were started and their endpoints were tested.
-
-This ensured that application-level problems were separated from Kubernetes/AWS problems.
-
----
-
-# 9. Amazon ECR
-
-Three ECR repositories were created:
+Three Amazon ECR repositories are used:
 
 ```text
 streaming-frontend
@@ -320,410 +175,478 @@ streaming-hello-service
 streaming-profile-service
 ```
 
-Region:
+Each application component has its own Docker image repository.
+
+The flow is:
 
 ```text
-us-east-1
+Application Source
+       |
+       v
+Docker Build
+       |
+       v
+Docker Image
+       |
+       v
+Amazon ECR
 ```
 
-Example ECR registry:
-
-```text
-533612070969.dkr.ecr.us-east-1.amazonaws.com
-```
-
-Authenticate Docker with ECR:
-
-```powershell
-aws ecr get-login-password --region us-east-1 |
-docker login --username AWS --password-stdin 533612070969.dkr.ecr.us-east-1.amazonaws.com
-```
-
-Images were tagged and pushed to ECR.
-
-Example:
-
-```powershell
-docker tag hello-service:1 `
-  533612070969.dkr.ecr.us-east-1.amazonaws.com/streaming-hello-service:1
-```
-
-Push:
-
-```powershell
-docker push `
-  533612070969.dkr.ecr.us-east-1.amazonaws.com/streaming-hello-service:1
-```
-
-The same approach was followed for the frontend and profile service.
+ECR acts as the centralized container image registry from which Kubernetes pulls the application images.
 
 ---
 
-# 10. Jenkins CI/CD
+# 6. Jenkins Setup
 
-Jenkins was deployed using Docker.
+Jenkins is running locally inside a Docker container.
 
-The Jenkins container was configured with:
+The Jenkins container is configured with access to Docker so that Jenkins can build application images.
 
-* Jenkins home volume
-* Docker socket
-* Docker CLI
-* AWS CLI
-* Git
-
-Jenkins was able to execute:
-
-```powershell
-docker version
-aws --version
-git --version
-aws sts get-caller-identity
-```
-
-The Jenkins pipeline was configured to:
-
-1. Checkout source code
-2. Build Docker images
-3. Authenticate with AWS
-4. Login to ECR
-5. Build service images
-6. Tag images
-7. Push images to ECR
-
----
-
-# 11. Jenkins Build Versioning
-
-Each successful Jenkins build produced a new image version.
-
-Example:
+The Jenkins environment contains the tools required by the pipeline:
 
 ```text
-streaming-frontend:<BUILD_NUMBER>
-streaming-hello-service:<BUILD_NUMBER>
-streaming-profile-service:<BUILD_NUMBER>
+Docker
+AWS CLI
+Git
+kubectl
 ```
 
-The corresponding image version was updated in the Kubernetes Deployment manifests before deploying the new version.
+`kubectl` is required because the CD portion of the pipeline communicates directly with the EKS cluster.
 
-This allowed the deployment to use the exact image produced by Jenkins.
+Verify the Kubernetes client:
 
----
-
-# 12. Amazon EKS Cluster
-
-EKS cluster:
-
-```text
-container-orch-cluster
-```
-
-Region:
-
-```text
-us-east-1
-```
-
-Node group:
-
-```text
-container-orch-nodes
-```
-
-The node group was configured with:
-
-```text
-Minimum: 2
-Desired: 4
-Maximum: 4
-```
-
-The cluster was eventually expanded to four nodes to provide sufficient Pod capacity for the application and monitoring components.
-
-Check cluster:
-
-```powershell
-kubectl get nodes
-```
-
-Example:
-
-```text
-NAME                            STATUS   ROLES    VERSION
-ip-192-168-32-95.ec2.internal   Ready    <none>   v1.34.x
-ip-192-168-63-54.ec2.internal   Ready    <none>   v1.34.x
-ip-192-168-7-170.ec2.internal   Ready    <none>   v1.34.x
-...
+```bash
+kubectl version --client
 ```
 
 ---
 
-# 13. EKS Add-ons
+# 7. Jenkins AWS Credentials
 
-The following EKS add-ons were configured:
+AWS credentials are stored securely in Jenkins rather than hardcoded into the Jenkinsfile.
 
-```text
-coredns
-eks-pod-identity-agent
-kube-proxy
-metrics-server
-vpc-cni
-amazon-cloudwatch-observability
-```
-
-Check add-ons:
-
-```powershell
-eksctl get addon `
-  --cluster container-orch-cluster `
-  --region us-east-1
-```
-
-Expected status:
+The Jenkins credential ID used by the pipeline is:
 
 ```text
-ACTIVE
+aws-ecr-credentials
 ```
 
-for the required add-ons.
+The Jenkinsfile retrieves the credentials using Jenkins Credentials Binding:
+
+```groovy
+withCredentials([
+    usernamePassword(
+        credentialsId: env.AWS_CREDENTIALS_ID,
+        usernameVariable: 'AWS_ACCESS_KEY_ID',
+        passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+    )
+])
+```
+
+This allows Jenkins to authenticate with AWS while keeping the actual access key and secret key outside the source code.
 
 ---
 
-# 14. Kubernetes Deployments
+# 8. Jenkins IAM User
 
-Each application was deployed using a Kubernetes Deployment.
-
-## Frontend
+The AWS credentials used by Jenkins correspond to:
 
 ```text
-Deployment: frontend
-Port: 80
-Replicas: 2
+IAM User:
+jenkins-ecr-user
 ```
 
-## Hello Service
+This IAM identity is responsible for allowing Jenkins to interact with AWS services required by the pipeline.
+
+The permissions are intentionally separated into:
 
 ```text
-Deployment: hello-service
-Port: 3001
-Replicas: 2
+AWS IAM permissions
+        +
+EKS access permissions
+        +
+Kubernetes RBAC permissions
 ```
 
-## Profile Service
-
-```text
-Deployment: profile-service
-Port: 3002
-Replicas: 2
-```
-
-Check:
-
-```powershell
-kubectl get deployments
-kubectl get pods
-```
+This provides a clear authorization model.
 
 ---
 
-# 15. Kubernetes Services
+# 9. IAM Permission for EKS Cluster Discovery
 
-Three ClusterIP services were created:
+Before Jenkins can communicate with Kubernetes, it needs to obtain the EKS cluster configuration.
+
+Jenkins uses:
+
+```bash
+aws eks update-kubeconfig \
+  --region us-east-1 \
+  --name container-orch-cluster
+```
+
+AWS must therefore allow the Jenkins IAM identity to perform:
 
 ```text
-frontend
-hello-service
-profile-service
+eks:DescribeCluster
 ```
 
-Check:
+An **inline IAM policy** containing the required `eks:DescribeCluster` permission is attached to:
 
-```powershell
-kubectl get services
+```text
+jenkins-ecr-user
 ```
 
-The services provide stable internal networking between Kubernetes workloads.
+### Significance
+
+This is an **AWS IAM permission**.
+
+It allows Jenkins to discover the EKS cluster endpoint and certificate information required to create/update the kubeconfig.
+
+It does **not** by itself give Jenkins permission to create Kubernetes resources.
+
+The distinction is:
+
+```text
+eks:DescribeCluster
+        |
+        v
+AWS allows Jenkins to discover the EKS cluster
+```
+
+Then Kubernetes authorization is handled separately.
 
 ---
 
-# 16. MongoDB Atlas
+# 10. EKS Access Entry for Jenkins
 
-The Profile Service uses MongoDB Atlas.
-
-The MongoDB connection string is stored as an AWS Secrets Manager secret instead of being hard-coded into the application or Kubernetes manifest.
-
-MongoDB Atlas Network Access was configured to allow the IP address used by the EKS workload to reach the cluster.
-
-The application was successfully tested with:
+An EKS Access Entry is configured for:
 
 ```text
-MongoDB connected successfully
+arn:aws:iam::533612070969:user/jenkins-ecr-user
 ```
+
+### Why is this required?
+
+The Jenkins IAM identity exists in AWS, but Kubernetes also needs to recognize that AWS identity when Jenkins connects to the EKS API server.
+
+The EKS Access Entry establishes the relationship between the AWS IAM principal and access to the EKS cluster.
+
+Conceptually:
+
+```text
+AWS IAM User
+      |
+      v
+EKS Access Entry
+      |
+      v
+Kubernetes Identity
+```
+
+The Jenkins principal is represented in Kubernetes as:
+
+```text
+arn:aws:iam::533612070969:user/jenkins-ecr-user
+```
+
+This provides the foundation for controlling Jenkins' Kubernetes permissions.
 
 ---
 
-# 17. AWS Secrets Manager
+# 11. AmazonEKSEditPolicy
 
-Secret created:
-
-```text
-streaming/profile-service/mongo-url
-```
-
-The MongoDB connection URL is stored securely in AWS Secrets Manager.
-
-The application does not store the actual MongoDB connection string in GitHub.
-
----
-
-# 18. EKS Pod Identity
-
-EKS Pod Identity was used to allow the Profile Service Pod to access the required AWS secret.
-
-Service Account:
+The Jenkins IAM principal is associated with:
 
 ```text
-profile-service
+AmazonEKSEditPolicy
 ```
 
-Namespace:
+with access scoped to the:
 
 ```text
 default
 ```
 
-IAM Role:
+namespace.
+
+### Why?
+
+The CI/CD pipeline needs to manage application resources inside Kubernetes.
+
+The namespace-scoped edit access allows Jenkins to perform normal application deployment operations such as managing:
 
 ```text
-StreamingProfileServiceSecretsRole
+Deployments
+Services
+HorizontalPodAutoscalers
+Ingress
 ```
 
-Verify the association:
+The access is scoped to the application namespace rather than unnecessarily granting broad cluster-wide administrative access.
 
-```powershell
-aws eks list-pod-identity-associations `
-  --cluster-name container-orch-cluster `
-  --region us-east-1
-```
-
-The association maps:
+### Authorization model
 
 ```text
-default/profile-service
-        |
-        v
-StreamingProfileServiceSecretsRole
+Jenkins IAM User
+       |
+       v
+EKS Access Entry
+       |
+       v
+AmazonEKSEditPolicy
+       |
+       v
+Application namespace
 ```
 
 ---
 
-# 19. IAM Trust Policy
+# 12. Kubernetes RBAC for SecretProviderClass
 
-The IAM role uses the EKS Pod Identity principal:
+The application uses the AWS Secrets Store CSI Driver.
 
-```json
-{
-  "Effect": "Allow",
-  "Principal": {
-    "Service": "pods.eks.amazonaws.com"
-  },
-  "Action": [
-    "sts:AssumeRole",
-    "sts:TagSession"
-  ]
-}
+One of the resources created by the driver is:
+
+```text
+SecretProviderClass
 ```
 
-This allows EKS Pods to assume the IAM role through EKS Pod Identity.
+Its API group is:
+
+```text
+secrets-store.csi.x-k8s.io
+```
+
+The application uses:
+
+```text
+profile-service-secrets
+```
+
+as its `SecretProviderClass`.
+
+Although Jenkins has normal namespace-level edit access, custom resources can require explicit Kubernetes RBAC permissions.
+
+Therefore a dedicated Kubernetes Role is created for Jenkins.
 
 ---
 
-# 20. IAM Permissions
+# 13. Understanding the SecretProviderClass CRD
 
-The IAM policy attached to the role allows:
+`SecretProviderClass` is a Kubernetes custom resource.
+
+CRD stands for:
 
 ```text
-secretsmanager:GetSecretValue
-secretsmanager:DescribeSecret
+Custom Resource Definition
 ```
 
-for the specific MongoDB secret.
+It extends Kubernetes with additional resource types.
 
-The permission is scoped to:
+For this application:
+
+```text
+API Group:
+secrets-store.csi.x-k8s.io
+
+Resource:
+secretproviderclasses
+```
+
+The application manifest contains:
+
+```yaml
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+```
+
+This resource defines how the application obtains secrets from AWS Secrets Manager.
+
+---
+
+# 14. Jenkins Kubernetes Role
+
+The Jenkins Role defines what Jenkins is allowed to do with `SecretProviderClass`.
+
+The Role contains permissions for:
+
+```text
+get
+list
+watch
+create
+update
+patch
+delete
+```
+
+against:
+
+```text
+secretproviderclasses
+```
+
+in the:
+
+```text
+secrets-store.csi.x-k8s.io
+```
+
+API group.
+
+### Significance
+
+The Role answers:
+
+> **What can Jenkins do?**
+
+Conceptually:
+
+```text
+Role
+ |
+ +-- API Group
+ |     secrets-store.csi.x-k8s.io
+ |
+ +-- Resource
+ |     secretproviderclasses
+ |
+ +-- Actions
+       get
+       list
+       watch
+       create
+       update
+       patch
+       delete
+```
+
+---
+
+# 15. Jenkins RoleBinding
+
+A Kubernetes RoleBinding connects the Jenkins Kubernetes identity to the Role.
+
+The binding assigns:
+
+```text
+User:
+arn:aws:iam::533612070969:user/jenkins-ecr-user
+```
+
+to:
+
+```text
+Role:
+jenkins-secretproviderclass-role
+```
+
+### Significance
+
+The RoleBinding answers:
+
+> **Who receives these permissions?**
+
+Therefore:
+
+```text
+Jenkins User
+      |
+      v
+RoleBinding
+      |
+      v
+jenkins-secretproviderclass-role
+      |
+      v
+SecretProviderClass permissions
+```
+
+This is Kubernetes **RBAC**.
+
+RBAC stands for:
+
+```text
+Role-Based Access Control
+```
+
+---
+
+# 16. RBAC vs IAM
+
+AWS IAM and Kubernetes RBAC serve different purposes.
+
+### AWS IAM
+
+Controls what an AWS identity can do in AWS.
+
+```text
+IAM User
+   |
+   v
+IAM Policy
+   |
+   v
+AWS permissions
+```
+
+Example:
+
+```text
+eks:DescribeCluster
+```
+
+### Kubernetes RBAC
+
+Controls what an identity can do inside Kubernetes.
+
+```text
+Kubernetes User
+      |
+      v
+RoleBinding
+      |
+      v
+Role
+      |
+      v
+Kubernetes resources
+```
+
+Example:
+
+```text
+SecretProviderClass
+```
+
+Both authorization systems are required because Jenkins interacts with both AWS and Kubernetes.
+
+---
+
+# 17. AWS Secrets Manager and Secrets Store CSI Driver
+
+Sensitive configuration is stored in **AWS Secrets Manager** rather than directly inside Git.
+
+The Profile Service uses:
 
 ```text
 streaming/profile-service/mongo-url
 ```
 
-rather than granting unrestricted Secrets Manager access.
+as the AWS Secrets Manager secret.
 
----
+The secret contains the MongoDB connection information.
 
-# 21. Secrets Store CSI Driver
+The application does not store the MongoDB connection string directly in the Kubernetes Deployment YAML.
 
-The following components were installed:
-
-```text
-Secrets Store CSI Driver
-AWS Secrets Manager / Parameter Store Provider
-```
-
-Verify:
-
-```powershell
-kubectl get pods -n kube-system
-```
-
-The following components should be running:
-
-```text
-csi-secrets-store
-secrets-store-csi-driver-provider-aws
-```
-
----
-
-# 22. SecretProviderClass
-
-A Kubernetes `SecretProviderClass` was configured to retrieve:
-
-```text
-streaming/profile-service/mongo-url
-```
-
-from AWS Secrets Manager.
-
-The secret is mounted into the Profile Service Pod and synchronized into:
-
-```text
-profile-service-secret
-```
-
-The application consumes:
-
-```text
-MONGO_URL
-```
-
-through the Kubernetes Secret.
-
----
-
-# 23. Profile Service Secret Flow
+Instead, the secret retrieval process is handled through the **Secrets Store CSI Driver** and a Kubernetes `SecretProviderClass`.
 
 The complete flow is:
 
 ```text
 AWS Secrets Manager
         |
-        | GetSecretValue
-        v
-EKS Pod Identity
-        |
-        v
-IAM Role
-StreamingProfileServiceSecretsRole
-        |
+        | Secret
         v
 Secrets Store CSI Driver
         |
@@ -731,300 +654,530 @@ Secrets Store CSI Driver
 SecretProviderClass
         |
         v
-Kubernetes Secret
-profile-service-secret
-        |
-        v
-Profile Service
+Profile Service Pod
+```
+
+### SecretProviderClass
+
+The `SecretProviderClass` acts as the configuration object that tells the Secrets Store CSI Driver:
+
+* Which AWS secret should be retrieved
+* Which AWS Secrets Manager object type is being used
+* What local/object alias should be used
+* Which Kubernetes Secret should be created/synchronized
+
+The configuration contains the AWS Secrets Manager object:
+
+```text
+streaming/profile-service/mongo-url
+```
+
+and maps it to:
+
+```text
 MONGO_URL
+```
+
+The Kubernetes Secret created/synchronized for the application is:
+
+```text
+profile-service-secret
+```
+
+with:
+
+```text
+MONGO_URL
+```
+
+as the key.
+
+### Why use this approach?
+
+Instead of:
+
+```text
+Git
+ |
+ +-- MongoDB connection string
+```
+
+we use:
+
+```text
+Git
+ |
+ +-- SecretProviderClass configuration
+ |
+ v
+AWS Secrets Manager
+ |
+ +-- Actual secret value
+```
+
+This keeps sensitive values outside the source repository.
+
+### Jenkins access to SecretProviderClass
+
+The Jenkins deployment pipeline must also be able to manage the `SecretProviderClass` resource when executing:
+
+```bash
+kubectl apply -f infrastructure/eks/manifests
+```
+
+Because `SecretProviderClass` belongs to the custom API group:
+
+```text
+secrets-store.csi.x-k8s.io
+```
+
+dedicated Kubernetes RBAC was configured for the Jenkins identity.
+
+Therefore there are two separate permission concerns:
+
+```text
+Jenkins
+ |
+ +--> Kubernetes RBAC
+ |       |
+ |       +--> Manage SecretProviderClass
+ |
+ +--> AWS IAM / EKS access
+         |
+         +--> Access EKS
+```
+
+The application itself later accesses AWS Secrets Manager through its Pod Identity configuration.
+
+---
+
+# 18. Amazon Load Balancer Controller
+
+The **AWS Load Balancer Controller (ALBC)** is installed in the EKS cluster to integrate Kubernetes with AWS Elastic Load Balancing.
+
+Its primary responsibility in this project is to watch Kubernetes resources such as `Ingress` and automatically create and manage the corresponding AWS Application Load Balancer.
+
+The architecture is:
+
+```text
+Kubernetes Ingress
+        |
+        | watched by
+        v
+AWS Load Balancer Controller
+        |
+        | AWS API calls
+        v
+Application Load Balancer
+```
+
+### ServiceAccount for ALBC
+
+The AWS Load Balancer Controller runs inside Kubernetes using its own Kubernetes ServiceAccount.
+
+The ServiceAccount is associated with an AWS IAM role.
+
+This allows the controller Pods to make the AWS API calls required to create and manage load-balancing resources.
+
+### OIDC and IRSA
+
+For the AWS Load Balancer Controller, we configured the EKS cluster's **OIDC provider** and used **IAM Roles for Service Accounts (IRSA)**.
+
+The authorization flow is:
+
+```text
+ALBC Pod
+   |
+   v
+ALBC ServiceAccount
+   |
+   v
+OIDC Provider
+   |
+   v
+IAM Role
+   |
+   v
+IAM Policy
+   |
+   v
+AWS Elastic Load Balancing APIs
+```
+
+The ServiceAccount is therefore the Kubernetes identity used by the Load Balancer Controller.
+
+The IAM role associated with this ServiceAccount contains the permissions required by the controller to manage AWS load-balancing resources.
+
+### Why is this required?
+
+The ALBC needs AWS permissions to perform operations such as:
+
+```text
+Create Load Balancer
+Create Target Group
+Create Listener
+Create Listener Rules
+Register Targets
+Modify Load Balancer configuration
+Delete/Update Load Balancer resources
+```
+
+Without AWS authorization, Kubernetes could have an Ingress object, but the controller would not be able to create the corresponding AWS load balancer.
+
+### Important distinction
+
+The ALBC ServiceAccount is **not** the same as:
+
+```text
+profile-service
+```
+
+The identities serve different purposes:
+
+```text
+ALBC ServiceAccount
         |
         v
-MongoDB Atlas
+AWS Load Balancer Controller
+        |
+        v
+AWS Load Balancer APIs
+
+
+profile-service ServiceAccount
+        |
+        v
+Profile Service Pods
+        |
+        v
+AWS Secrets Manager
 ```
 
-Verify:
+The ALBC ServiceAccount is for the **infrastructure controller**.
 
-```powershell
-kubectl exec deployment/profile-service -- printenv MONGO_URL
-```
-
-The application was successfully able to connect to MongoDB Atlas.
+The Profile Service ServiceAccount is for the **application workload**.
 
 ---
 
-# 24. AWS Load Balancer Controller
+# 19. EKS Pod Identity
 
-AWS Load Balancer Controller was installed in the EKS cluster.
+EKS Pod Identity is used to provide AWS permissions directly to application Pods without placing AWS access keys inside the containers.
 
-Verify:
+For this project, the EKS Pod Identity capability/add-on was installed and configured for the cluster.
 
-```powershell
-kubectl get pods -n kube-system | findstr aws-load-balancer
+The Profile Service uses the Kubernetes ServiceAccount:
+
+```yaml
+serviceAccountName: profile-service
 ```
 
-Two controller Pods were running successfully.
+This ServiceAccount is associated with an AWS IAM role through an **EKS Pod Identity Association**.
 
-The controller manages AWS Application Load Balancers for Kubernetes Ingress resources.
+The IAM role has the required permission to access AWS Secrets Manager.
 
----
-
-# 25. ALB Ingress
-
-An AWS ALB Ingress was configured to expose the application.
-
-Ingress:
+The complete flow is:
 
 ```text
-streaming-ingress
+Profile Service Pod
+        |
+        v
+ServiceAccount
+profile-service
+        |
+        v
+EKS Pod Identity Association
+        |
+        v
+AWS IAM Role
+        |
+        v
+IAM Policy
+        |
+        v
+AWS Secrets Manager
+        |
+        v
+streaming/profile-service/mongo-url
 ```
 
-Ingress class:
+### Why EKS Pod Identity?
+
+The application should not contain:
 
 ```text
-alb
+AWS_ACCESS_KEY_ID
+AWS_SECRET_ACCESS_KEY
 ```
 
-Scheme:
+inside the Pod.
+
+Instead, AWS identity is provided through the Kubernetes ServiceAccount and EKS Pod Identity.
+
+This gives the application temporary AWS credentials associated with the IAM role.
+
+### IAM Role and Policy
+
+An IAM role was created specifically for the Profile Service workload.
+
+The role is associated with the Kubernetes ServiceAccount:
 
 ```text
-internet-facing
+profile-service
 ```
 
-Target type:
+The IAM policy attached to the role grants the permissions required to retrieve the application's secret from AWS Secrets Manager.
+
+Conceptually:
 
 ```text
-ip
-```
-
-Routing:
-
-```text
-/hello
+IAM Policy
+    |
+    | Allows required Secrets Manager actions
+    v
+IAM Role
+    |
+    | Associated with
+    v
+profile-service ServiceAccount
     |
     v
-hello-service:3001
-
-/profile
-    |
-    v
-profile-service:3002
-
-/
-    |
-    v
-frontend:80
+Profile Service Pod
 ```
 
-Check:
+### Why this is different from Jenkins IAM
 
-```powershell
-kubectl get ingress
+Jenkins and the application have completely different identities and responsibilities.
+
+```text
+Jenkins
+ |
+ +--> IAM User
+ |      |
+ |      +--> EKS access
+ |      +--> ECR access
+ |      +--> Kubernetes deployment permissions
+ |
+ v
+Deploys application
+
+
+Profile Service
+ |
+ +--> Kubernetes ServiceAccount
+        |
+        +--> EKS Pod Identity
+                |
+                +--> IAM Role
+                        |
+                        +--> Secrets Manager access
 ```
 
-The ALB DNS name was generated automatically by AWS.
+Jenkins needs permission to **deploy** the application.
+
+The Profile Service needs permission to **read its runtime secret**.
+
+These permissions are intentionally separated.
 
 ---
 
-# 26. Final Application Routes
+# 20. Kubernetes Deployments
 
-The application was successfully tested using the ALB DNS name.
+The application is deployed using Kubernetes Deployment resources.
 
-### Frontend
-
-```text
-http://<ALB-DNS>/
-```
-
-### Hello Service
+There are three primary Deployments:
 
 ```text
-http://<ALB-DNS>/hello
+frontend
+hello-service
+profile-service
 ```
 
-### Profile Service
-
-```text
-http://<ALB-DNS>/profile/fetchUser
-```
-
-All three URLs were successfully tested.
+Deployments manage the desired number of Pods and perform rolling updates when the container image changes.
 
 ---
 
-# 27. Important Application Routing Fix
+# 21. Kubernetes Services
 
-Initially, the application routes did not match the ALB paths.
+Each application component has a Kubernetes Service.
 
-The final application endpoints were aligned with the Ingress:
+Services provide stable networking for the Pods even when Pods are recreated.
 
-### Hello Service
+The architecture is:
 
-```javascript
-app.get('/hello', ...)
+```text
+Service
+   |
+   +---- Pod
+   +---- Pod
+   +---- Pod
 ```
 
-### Profile Service
-
-```javascript
-app.get('/profile/fetchUser', ...)
-```
-
-Frontend:
-
-```javascript
-axios.get("hello/")
-```
-
-and:
-
-```javascript
-axios.get("profile/fetchUser")
-```
-
-This allowed the browser requests to match the ALB Ingress paths correctly.
+Kubernetes automatically routes traffic to the appropriate healthy Pods.
 
 ---
 
-# 28. CloudWatch Monitoring
+# 22. Kubernetes Ingress and Application Load Balancer
 
-Amazon CloudWatch Container Insights was enabled using the:
+The Kubernetes Ingress defines how external HTTP/HTTPS traffic should be routed into the application.
 
-```text
-amazon-cloudwatch-observability
-```
+In this project, the Ingress is integrated with the **AWS Load Balancer Controller**.
 
-EKS add-on.
-
-Check:
-
-```powershell
-eksctl get addon `
-  --cluster container-orch-cluster `
-  --region us-east-1
-```
-
-CloudWatch components:
+The complete traffic flow is:
 
 ```text
-cloudwatch-agent
-fluent-bit
-amazon-cloudwatch-observability-controller-manager
+Internet / Browser
+        |
+        v
+Application Load Balancer
+        |
+        v
+AWS Load Balancer Controller
+        |
+        v
+Kubernetes Ingress
+        |
+        v
+Kubernetes Service
+        |
+        v
+Application Pods
 ```
 
-Verify:
+### How the ALB is created
 
-```powershell
-kubectl get pods -n amazon-cloudwatch
-```
+The ALB is not manually created for the application.
 
----
+The Kubernetes Ingress contains the required AWS Load Balancer Controller configuration.
 
-# 29. CloudWatch Application Logs
+The AWS Load Balancer Controller watches the Ingress resource.
 
-CloudWatch Container Insights created the following log groups:
+When it detects the Ingress, it communicates with AWS APIs and creates the required:
 
 ```text
-/aws/containerinsights/container-orch-cluster/application
-/aws/containerinsights/container-orch-cluster/dataplane
-/aws/containerinsights/container-orch-cluster/host
-/aws/containerinsights/container-orch-cluster/performance
+Application Load Balancer
+Target Group
+Listener
+Listener Rules
 ```
 
-Application logs are centralized in:
+The resulting architecture is:
 
 ```text
-/aws/containerinsights/container-orch-cluster/application
+Kubernetes Ingress
+       |
+       | interpreted by
+       v
+AWS Load Balancer Controller
+       |
+       | creates/manages
+       v
+AWS Application Load Balancer
 ```
 
-Verify:
+### Target Type: IP
 
-```powershell
-aws logs describe-log-groups `
-  --region us-east-1 `
-  --query "logGroups[].logGroupName" `
-  --output table
+The Ingress is configured to use:
+
+```text
+target-type: ip
 ```
 
----
+With IP target mode, the ALB target groups use the **Pod IP addresses** as targets.
 
-# 30. Application Logging
+Therefore traffic can flow directly from the ALB to the application Pods rather than requiring the ALB to target the EC2 worker nodes first.
 
-Application-level logging was added to the services.
+Conceptually:
+
+```text
+Internet
+   |
+   v
+ALB
+   |
+   +------------------+
+   |                  |
+   v                  v
+Pod IP              Pod IP
+Frontend            Frontend
+```
+
+For backend services, the same model allows traffic to ultimately reach the appropriate application Pods through the Kubernetes networking configuration.
+
+### Why IP target mode is useful
+
+The Pods are the actual application workloads.
+
+When Kubernetes creates, removes, or replaces Pods, their IP addresses can change.
+
+The AWS Load Balancer Controller continuously reconciles the Kubernetes state with the AWS load balancer configuration and keeps the target groups synchronized with the current workload.
+
+This becomes especially important when HPA changes the number of Pods.
 
 For example:
 
-```javascript
-console.log("Hello endpoint called");
+```text
+Initial state:
+
+ALB
+ |
+ +--> Pod 1
+ +--> Pod 2
+
+
+Traffic increases
+
+        HPA
+         |
+         v
+Pod 3 created
+
+
+Controller updates target registration
+
+ALB
+ |
+ +--> Pod 1
+ +--> Pod 2
+ +--> Pod 3
 ```
 
-Kubernetes captures the container's stdout/stderr.
+When Pods are removed during scaling or rolling deployment, the corresponding targets are also reconciled.
 
-The logging flow is:
+### Ingress is the routing configuration
+
+The Ingress itself does not create the AWS ALB.
+
+The responsibilities are:
 
 ```text
-Application
-    |
-    v
-Container stdout/stderr
-    |
-    v
-Kubernetes node
-    |
-    v
-Fluent Bit
-    |
-    v
-CloudWatch Logs
+Ingress
+   |
+   | Defines desired routing
+   v
+AWS Load Balancer Controller
+   |
+   | Implements that routing in AWS
+   v
+Application Load Balancer
 ```
 
-Logs can be viewed using AWS CLI or the CloudWatch console.
+This distinction is important when troubleshooting.
 
-Example:
-
-```powershell
-aws logs describe-log-streams `
-  --log-group-name "/aws/containerinsights/container-orch-cluster/application" `
-  --region us-east-1 `
-  --query "logStreams[?contains(logStreamName, 'hello-service')].logStreamName" `
-  --output table
-```
+If the Ingress exists but no ALB is created, the AWS Load Balancer Controller and its AWS permissions should be checked.
 
 ---
 
-# 31. Metrics Server
+# 23. Horizontal Pod Autoscaler
 
-Metrics Server was already available in the EKS cluster.
-
-Verify:
-
-```powershell
-kubectl get pods -n kube-system | findstr metrics-server
-```
-
-Test:
-
-```powershell
-kubectl top pods
-```
-
-Example:
+HPA is configured for:
 
 ```text
-NAME                         CPU(cores)   MEMORY(bytes)
-frontend-...                 1m           7Mi
-hello-service-...            8m           82Mi
-profile-service-...          11m          97Mi
+frontend
+hello-service
+profile-service
 ```
 
-This confirms that Kubernetes can retrieve resource metrics.
-
----
-
-# 32. Horizontal Pod Autoscaler
-
-HPA was configured for all three application services.
-
-Configuration:
+The configuration uses:
 
 ```text
 Minimum replicas: 2
@@ -1032,905 +1185,630 @@ Maximum replicas: 4
 CPU target: 70%
 ```
 
-HPAs:
-
-```text
-frontend-hpa
-hello-service-hpa
-profile-service-hpa
-```
-
-Check:
-
-```powershell
-kubectl get hpa
-```
-
-Expected structure:
-
-```text
-NAME                  MINPODS   MAXPODS   REPLICAS
-frontend-hpa          2         4         2
-hello-service-hpa     2         4         2
-profile-service-hpa   2         4         2
-```
-
----
-
-# 33. CPU Resource Requests
-
-HPA CPU utilization requires CPU requests to be defined in the Deployment.
+The HPA automatically adjusts the number of Pods based on CPU utilization.
 
 Example:
 
-```yaml
-resources:
-  requests:
-    cpu: "100m"
-    memory: "64Mi"
-  limits:
-    cpu: "250m"
-    memory: "128Mi"
-```
-
-Profile Service was given a slightly higher memory allocation because it communicates with MongoDB.
-
-Example:
-
-```yaml
-resources:
-  requests:
-    cpu: "100m"
-    memory: "128Mi"
-  limits:
-    cpu: "500m"
-    memory: "256Mi"
-```
-
-Without CPU requests, HPA reports:
-
 ```text
-cpu: <unknown>/70%
+Low CPU
+   |
+   v
+2 Pods
+
+High CPU
+   |
+   v
+3 Pods
+   |
+   v
+4 Pods
 ```
 
-and cannot calculate CPU utilization.
+CPU resource requests are defined in the Deployment because HPA CPU utilization is calculated relative to the requested CPU.
 
 ---
 
-# 34. HPA Scaling Model
+# 24. CI Pipeline
 
-The final scaling model is:
+The CI pipeline performs the following steps.
 
-```text
-                   HPA
-                    |
-             CPU utilization
-                    |
-             Target = 70%
-                    |
-       +------------+------------+
-       |            |            |
-   Frontend       Hello        Profile
-    2-4 Pods      2-4 Pods      2-4 Pods
+## Step 1 — Checkout
+
+Jenkins checks out the source code from GitHub.
+
+```groovy
+checkout scm
 ```
-
-HPA can increase the number of application Pods when CPU utilization exceeds the configured target.
 
 ---
 
-# 35. Node Capacity
+## Step 2 — Resolve AWS Account and ECR Registry
 
-The EKS nodes were configured with sufficient capacity for the application and supporting workloads.
+The pipeline dynamically obtains the AWS account ID:
 
-Pod capacity was checked using:
-
-```powershell
-kubectl get nodes -o custom-columns="NODE:.metadata.name,PODS:.status.allocatable.pods"
+```bash
+aws sts get-caller-identity
 ```
 
-During the initial configuration, the cluster had:
+The ECR registry is then constructed dynamically.
 
-```text
-2 nodes
-```
-
-with approximately:
-
-```text
-11 Pods per node
-```
-
-available for scheduling.
-
-The cluster was expanded to:
-
-```text
-4 nodes
-```
-
-to provide additional capacity.
+No AWS account ID is hardcoded in the Jenkinsfile.
 
 ---
 
-# 36. Final Kubernetes Validation
+## Step 3 — Build Frontend Image
 
-Check all application Pods:
+Jenkins builds the frontend Docker image from:
 
-```powershell
-kubectl get pods
+```text
+frontend/
 ```
 
-Check Deployments:
+---
 
-```powershell
-kubectl get deployments
+## Step 4 — Build Hello Service Image
+
+Jenkins builds the Hello Service image from:
+
+```text
+backend/helloService/
 ```
 
-Check Services:
+---
 
-```powershell
-kubectl get services
+## Step 5 — Build Profile Service Image
+
+Jenkins builds the Profile Service image from:
+
+```text
+backend/profileService/
 ```
 
-Check Ingress:
+---
 
-```powershell
-kubectl get ingress
+# 25. Dynamic Docker Image Versioning
+
+Each Jenkins build receives a unique Jenkins build number.
+
+The pipeline uses:
+
+```text
+BUILD_NUMBER
 ```
 
-Check HPA:
+as the Docker image version.
 
-```powershell
-kubectl get hpa
+For example:
+
+```text
+Jenkins Build #27
 ```
 
-Check node status:
+produces:
 
-```powershell
+```text
+streaming-frontend:27
+streaming-hello-service:27
+streaming-profile-service:27
+```
+
+The number is generated dynamically by Jenkins.
+
+The Jenkinsfile does not contain:
+
+```text
+:27
+:28
+:29
+```
+
+or any manually maintained version.
+
+### Significance
+
+Every deployment can be traced back to a specific Jenkins build.
+
+For example:
+
+```text
+Production image
+        |
+        v
+Build #27
+        |
+        v
+Git commit associated with Build #27
+```
+
+This provides basic deployment traceability and makes rollback to a previous build version possible.
+
+---
+
+# 26. Login to Amazon ECR
+
+Jenkins authenticates with Amazon ECR using the AWS credentials stored in Jenkins.
+
+The pipeline uses:
+
+```bash
+aws ecr get-login-password
+```
+
+and:
+
+```bash
+docker login
+```
+
+This allows Jenkins to push the newly built images into ECR.
+
+---
+
+# 27. Push Images to ECR
+
+The versioned images are pushed to:
+
+```text
+533612070969.dkr.ecr.us-east-1.amazonaws.com
+```
+
+using the dynamically generated repository and build tag.
+
+Conceptually:
+
+```text
+Docker Build
+     |
+     v
+Image :BUILD_NUMBER
+     |
+     v
+ECR
+```
+
+---
+
+# 28. CD Pipeline
+
+After CI successfully pushes the images, the CD process begins.
+
+The deployment sequence is:
+
+```text
+Build
+  |
+  v
+Push Images to ECR
+  |
+  v
+Configure kubectl for EKS
+  |
+  v
+Apply Kubernetes Manifests
+  |
+  v
+Set Exact Image Version
+  |
+  v
+Rollout
+  |
+  v
+Validate
+```
+
+This ensures that the image created by the CI process is the image deployed by CD.
+
+---
+
+# 29. Configure kubectl for EKS
+
+Jenkins configures its Kubernetes context using:
+
+```bash
+aws eks update-kubeconfig \
+  --region us-east-1 \
+  --name container-orch-cluster
+```
+
+This creates the Kubernetes context inside the Jenkins container.
+
+The context can be verified with:
+
+```bash
+kubectl config current-context
+```
+
+---
+
+# 30. Apply Kubernetes Manifests
+
+Jenkins applies the application manifests:
+
+```bash
+kubectl apply -f infrastructure/eks/manifests
+```
+
+This applies the application configuration, including:
+
+```text
+Deployments
+Services
+HPA
+Ingress
+SecretProviderClass
+```
+
+The manifest directory does not contain the Jenkins RBAC configuration.
+
+The Jenkins RBAC resources are platform/security configuration and are maintained separately under:
+
+```text
+infrastructure/eks/rbac/
+```
+
+---
+
+# 31. Set the Exact Jenkins Build Image
+
+The Deployment YAML contains the base image configuration.
+
+The CD pipeline then explicitly sets the image generated by the current Jenkins build.
+
+For example:
+
+```bash
+kubectl set image deployment/frontend \
+  frontend=${FRONTEND_IMAGE}:${BUILD_NUMBER}
+```
+
+The same process is performed for:
+
+```text
+hello-service
+profile-service
+```
+
+### Why?
+
+The image produced by CI is:
+
+```text
+streaming-frontend:BUILD_NUMBER
+```
+
+Therefore CD must deploy that exact version rather than depending on a mutable `latest` tag.
+
+The final Deployment points to the exact image generated by the current Jenkins build.
+
+---
+
+# 32. Kubernetes Rolling Update
+
+When `kubectl set image` changes the Deployment image, Kubernetes detects that the desired Pod template has changed.
+
+The Deployment controller then performs a rolling update.
+
+Conceptually:
+
+```text
+Old Pods
+   |
+   | New image specified
+   v
+Kubernetes Deployment
+   |
+   v
+New Pods created
+   |
+   v
+Old Pods gradually removed
+   |
+   v
+New version running
+```
+
+This allows the application to be updated without manually deleting all existing Pods.
+
+---
+
+# 33. Rollout Status
+
+The pipeline uses:
+
+```bash
+kubectl rollout status deployment/frontend --timeout=300s
+```
+
+and equivalent commands for the other Deployments.
+
+`kubectl rollout status` does not start a second deployment.
+
+It monitors the Deployment rollout that Kubernetes is already performing.
+
+The pipeline waits until Kubernetes reports that the new Pods are successfully rolled out.
+
+---
+
+# 34. Deployment Validation
+
+After the rollout, Jenkins validates the Kubernetes deployment.
+
+Typical validation commands include:
+
+```bash
+kubectl get deployments -n default
+kubectl get pods -n default
+kubectl get services -n default
+kubectl get hpa -n default
+```
+
+Expected state:
+
+```text
+Frontend             READY
+Hello Service        READY
+Profile Service      READY
+```
+
+The pipeline is considered successful only after the deployment and rollout checks complete successfully.
+
+---
+
+# 35. GitHub Webhook Automation
+
+The final stage is automatic pipeline triggering.
+
+Because Jenkins is running locally, GitHub cannot directly reach:
+
+```text
+localhost:8080
+```
+
+ngrok is used to expose the local Jenkins instance.
+
+Start ngrok:
+
+```bash
+ngrok http 8080
+```
+
+ngrok provides a public HTTPS endpoint.
+
+The GitHub webhook is configured with:
+
+```text
+https://<ngrok-url>/github-webhook/
+```
+
+Jenkins is configured with:
+
+```text
+GitHub hook trigger for GITScm polling
+```
+
+The GitHub webhook listens for push events.
+
+---
+
+# 36. Final Automated Workflow
+
+After webhook configuration, the complete process becomes:
+
+```text
+Developer
+    |
+    | git push
+    v
+GitHub
+    |
+    | Webhook
+    v
+Jenkins
+    |
+    v
+Checkout
+    |
+    v
+Build Docker Images
+    |
+    v
+Dynamic BUILD_NUMBER
+    |
+    v
+Push Images to ECR
+    |
+    v
+Configure kubectl
+    |
+    v
+Apply Kubernetes Manifests
+    |
+    v
+Set Exact Build Image
+    |
+    v
+Rolling Update
+    |
+    v
+Rollout Validation
+    |
+    v
+Kubernetes Validation
+    |
+    v
+Application Updated
+```
+
+No manual **Build Now** action is required after the webhook is working.
+
+---
+
+# 37. Testing
+
+## Check EKS Nodes
+
+```bash
 kubectl get nodes
 ```
 
-Check metrics:
+## Check Pods
 
-```powershell
+```bash
+kubectl get pods
+```
+
+## Check Deployments
+
+```bash
+kubectl get deployments
+```
+
+## Check Services
+
+```bash
+kubectl get services
+```
+
+## Check HPA
+
+```bash
+kubectl get hpa
+```
+
+## Check Ingress
+
+```bash
+kubectl get ingress
+```
+
+## Check Resource Usage
+
+```bash
 kubectl top pods
 ```
 
----
+## Check Rollout
 
-# 37. Final Application Validation
-
-The following URLs were tested successfully:
-
-```text
-http://<ALB-DNS>/
-```
-
-```text
-http://<ALB-DNS>/hello
-```
-
-```text
-http://<ALB-DNS>/profile/fetchUser
-```
-
-Validation results:
-
-```text
-Frontend                ✅ Working
-Hello Service            ✅ Working
-Profile Service          ✅ Working
-MongoDB Atlas            ✅ Connected
-ALB Ingress              ✅ Working
-AWS Secrets Manager      ✅ Working
-EKS Pod Identity         ✅ Working
-CloudWatch Logs          ✅ Working
-Metrics Server           ✅ Working
-HPA                      ✅ Working
-```
-
----
-
-# 38. Major Issues Faced and Resolutions
-
-## Issue 1 — EKS Pod Identity Association Not Working
-
-### Problem
-
-Profile Service received:
-
-```text
-An IAM role must be associated with service account profile-service
-```
-
-### Cause
-
-The Kubernetes ServiceAccount and EKS Pod Identity association were not correctly aligned.
-
-### Resolution
-
-Verified:
-
-```text
-namespace: default
-serviceAccount: profile-service
-```
-
-and created/validated the association with:
-
-```text
-StreamingProfileServiceSecretsRole
-```
-
-Verification:
-
-```powershell
-aws eks list-pod-identity-associations `
-  --cluster-name container-orch-cluster `
-  --region us-east-1
-```
-
----
-
-## Issue 2 — Incorrect IAM Trust Policy
-
-### Problem
-
-The Pod needed to assume the IAM role.
-
-### Resolution
-
-The IAM role trust relationship was configured with:
-
-```json
-"Principal": {
-  "Service": "pods.eks.amazonaws.com"
-}
-```
-
-and:
-
-```json
-"Action": [
-  "sts:AssumeRole",
-  "sts:TagSession"
-]
-```
-
----
-
-## Issue 3 — Secrets Store Object Alias Error
-
-### Problem
-
-The CSI driver reported:
-
-```text
-file matching objectName streaming/profile-service/mongo-url not found in the pod
-```
-
-### Cause
-
-The `secretObjects.data.objectName` value did not match the mounted object name.
-
-### Resolution
-
-The SecretProviderClass was corrected so that the mounted secret object and the Kubernetes Secret mapping used the same expected object name.
-
-This allowed:
-
-```text
-profile-service-secret
-```
-
-to be created successfully.
-
----
-
-## Issue 4 — MongoDB Atlas Connection Failed
-
-### Problem
-
-Profile Service reported:
-
-```text
-MongoDB connection failed:
-Could not connect to any servers in your MongoDB Atlas cluster.
-```
-
-### Cause
-
-The network source IP used by the workload was not allowed by MongoDB Atlas Network Access.
-
-### Resolution
-
-The appropriate IP address was added to the MongoDB Atlas IP access list.
-
-After correction:
-
-```text
-MongoDB connected successfully
-```
-
----
-
-## Issue 5 — ALB `/hello` Returned 502
-
-### Problem
-
-The ALB returned:
-
-```text
-502 Bad Gateway
-```
-
-for:
-
-```text
-/hello
-```
-
-### Cause
-
-The application was listening on the wrong/undefined port because the expected environment configuration was missing.
-
-Logs initially showed:
-
-```text
-Server is running on port undefined
-```
-
-### Resolution
-
-The Hello Service was corrected to listen on:
-
-```text
-3001
-```
-
-and the Deployment was updated accordingly.
-
-Final log:
-
-```text
-Server is running on port 3001
-```
-
----
-
-## Issue 6 — `/hello` Returned `Cannot GET /hello`
-
-### Problem
-
-The application was reachable, but:
-
-```text
-/hello
-```
-
-returned:
-
-```text
-Cannot GET /hello
-```
-
-### Cause
-
-The Express route did not match the Ingress route.
-
-### Resolution
-
-The Express endpoint was changed to:
-
-```javascript
-app.get('/hello', ...)
-```
-
-The application was rebuilt and redeployed.
-
----
-
-## Issue 7 — `/profile/fetchUser` Returned `Cannot GET`
-
-### Problem
-
-The ALB path was:
-
-```text
-/profile/fetchUser
-```
-
-but the Express application exposed:
-
-```text
-/fetchUser
-```
-
-### Resolution
-
-The Profile Service route was changed to:
-
-```javascript
-app.get('/profile/fetchUser', ...)
-```
-
-The frontend was also configured to call:
-
-```text
-profile/fetchUser
-```
-
-The new image was built and deployed.
-
----
-
-## Issue 8 — Frontend Service Not Found
-
-### Problem
-
-The Ingress initially showed:
-
-```text
-<error: services "frontend" not found>
-```
-
-### Cause
-
-The Ingress referenced a Service that had not been created or had an incorrect name.
-
-### Resolution
-
-The frontend Kubernetes Service was created/corrected with the expected name:
-
-```text
-frontend
-```
-
-The ALB was then successfully reconciled.
-
----
-
-## Issue 9 — Test Curl Pod Could Not Be Scheduled
-
-### Problem
-
-A temporary test Pod using:
-
-```text
-curlimages/curl
-```
-
-could not be scheduled and eventually timed out.
-
-### Cause
-
-The worker nodes had reached their Pod scheduling capacity.
-
-### Resolution
-
-Node capacity was inspected:
-
-```powershell
-kubectl get nodes -o custom-columns="NODE:.metadata.name,PODS:.status.allocatable.pods"
-```
-
-The cluster was expanded from two nodes to four nodes.
-
----
-
-## Issue 10 — Pods Stuck in Pending State
-
-### Problem
-
-Pods showed:
-
-```text
-Pending
-```
-
-with:
-
-```text
-0/3 nodes are available:
-3 Too many pods
-```
-
-### Cause
-
-The nodes had reached their maximum Pod capacity.
-
-### Resolution
-
-The EKS node group's desired/max capacity was increased.
-
-After adding additional capacity:
-
-```text
-All application Pods → Running
-```
-
----
-
-## Issue 11 — CloudWatch Observability Add-on Degraded
-
-### Problem
-
-The CloudWatch add-on showed:
-
-```text
-DEGRADED
-```
-
-and the controller Pod was:
-
-```text
-Pending
-```
-
-### Cause
-
-There was insufficient Pod capacity on the two-node cluster.
-
-### Resolution
-
-The node group was scaled up.
-
-After adding the additional node capacity:
-
-```text
-amazon-cloudwatch-observability-controller-manager
-1/1 Running
-```
-
-and:
-
-```text
-cloudwatch-agent
-3/3 Running
-```
-
----
-
-## Issue 12 — HPA Showed `<unknown>/70%`
-
-### Problem
-
-HPA showed:
-
-```text
-cpu: <unknown>/70%
-```
-
-### Cause
-
-Metrics Server was working, but the application containers did not have CPU requests.
-
-HPA reported:
-
-```text
-missing request for cpu in container frontend
-```
-
-### Resolution
-
-CPU requests were added to the Deployments.
-
-Example:
-
-```yaml
-resources:
-  requests:
-    cpu: "100m"
-```
-
-After redeployment, HPA was able to calculate CPU utilization correctly.
-
----
-
-# 39. Useful Troubleshooting Commands
-
-## Pods
-
-```powershell
-kubectl get pods
-kubectl get pods -A
-kubectl get pods -o wide
-```
-
-## Pod logs
-
-```powershell
-kubectl logs deployment/frontend
-kubectl logs deployment/hello-service
-kubectl logs deployment/profile-service
-```
-
-For a specific Pod:
-
-```powershell
-kubectl logs <pod-name>
-```
-
-## Deployment status
-
-```powershell
+```bash
 kubectl rollout status deployment/frontend
 kubectl rollout status deployment/hello-service
 kubectl rollout status deployment/profile-service
 ```
 
-## Services
+## Check Logs
 
-```powershell
-kubectl get services
-kubectl get endpoints
-kubectl get endpointslices
+```bash
+kubectl logs deployment/frontend
+kubectl logs deployment/hello-service
+kubectl logs deployment/profile-service
 ```
 
-## Ingress
-
-```powershell
-kubectl get ingress
-kubectl describe ingress streaming-ingress
-```
-
-## HPA
-
-```powershell
-kubectl get hpa
-kubectl describe hpa frontend-hpa
-```
-
-## Metrics
-
-```powershell
-kubectl top nodes
-kubectl top pods
-```
-
-## Nodes
-
-```powershell
-kubectl get nodes
-kubectl describe node <node-name>
-```
-
-## CloudWatch
-
-```powershell
-aws logs describe-log-groups `
-  --region us-east-1 `
-  --output table
-```
-
-## EKS Pod Identity
-
-```powershell
-aws eks list-pod-identity-associations `
-  --cluster-name container-orch-cluster `
-  --region us-east-1
-```
+Finally, access the application through the configured Application Load Balancer/Ingress endpoint in a browser.
 
 ---
 
-# 40. Final Deployment Flow
+# 38. Issues Faced and Resolutions
 
-The complete deployment process is:
+The following issues were encountered during implementation and resolved:
 
-```text
-Developer
-    |
-    v
-GitHub Repository
-    |
-    v
-Jenkins Pipeline
-    |
-    +---- Build Frontend Image
-    |
-    +---- Build Hello Image
-    |
-    +---- Build Profile Image
-    |
-    v
-Amazon ECR
-    |
-    v
-Kubernetes Deployment
-    |
-    v
-Amazon EKS
-    |
-    +------------------+
-    |                  |
-    v                  v
-Kubernetes Services   HPA
-    |                  |
-    v                  v
-AWS ALB Ingress    2 → 4 Pods
-    |
-    v
-Internet
-```
+* **`eks:DescribeCluster` AccessDenied**
 
-For secrets:
+  * Added an inline IAM policy with `eks:DescribeCluster` to `jenkins-ecr-user`.
 
-```text
-AWS Secrets Manager
-        |
-        v
-EKS Pod Identity
-        |
-        v
-IAM Role
-        |
-        v
-CSI Driver
-        |
-        v
-Profile Service
-        |
-        v
-MongoDB Atlas
-```
+* **Jenkins could configure kubeconfig but Kubernetes access was not available**
 
-For monitoring:
+  * Created an EKS Access Entry for `jenkins-ecr-user`.
 
-```text
-Application
-    |
-    v
-Container stdout/stderr
-    |
-    v
-Fluent Bit
-    |
-    v
-CloudWatch Logs
+* **Jenkins could not access certain Kubernetes resources**
 
-Metrics Server
-    |
-    v
-HPA
-    |
-    v
-Application Scaling
-```
+  * Configured appropriate EKS namespace-level access using `AmazonEKSEditPolicy`.
+
+* **`SecretProviderClass` access denied**
+
+  * Created a Kubernetes Role for `secretproviderclasses` in the `secrets-store.csi.x-k8s.io` API group.
+
+* **Role permissions were not applied to Jenkins**
+
+  * Created a RoleBinding for `jenkins-ecr-user`.
+
+* **HPA showed `cpu: <unknown>`**
+
+  * Added CPU resource requests to the application containers.
+
+* **`kubectl: not found` inside Jenkins**
+
+  * Installed `kubectl` in the Jenkins container.
+
+* **Kubernetes authentication failed from Jenkins**
+
+  * Configured AWS credentials, EKS access, kubeconfig, and Kubernetes authorization correctly.
+
+* **Deployment version was hardcoded**
+
+  * Changed the pipeline to use Jenkins `BUILD_NUMBER` dynamically.
+
+* **`latest` image could not reliably identify the Jenkins build**
+
+  * CD now explicitly deploys the exact image version generated by the current Jenkins build.
+
+* **Git LF/CRLF warning on Windows**
+
+  * Identified as a Git line-ending warning rather than an application or Kubernetes failure.
 
 ---
 
-# 41. Final Validation Checklist
+# 39. Final Implementation
 
-* [x] Source code available in GitHub
-* [x] Dockerfiles created
-* [x] Images built successfully
-* [x] Images pushed to Amazon ECR
-* [x] Jenkins CI pipeline configured
-* [x] Jenkins successfully builds application images
-* [x] EKS cluster created
-* [x] EKS worker nodes configured
-* [x] Kubernetes Deployments created
-* [x] Kubernetes Services created
-* [x] AWS Load Balancer Controller configured
-* [x] ALB Ingress configured
-* [x] Frontend accessible
-* [x] Hello Service accessible
-* [x] Profile Service accessible
-* [x] MongoDB Atlas connected successfully
-* [x] AWS Secrets Manager configured
-* [x] EKS Pod Identity configured
-* [x] Secrets Store CSI Driver configured
-* [x] CloudWatch Container Insights configured
-* [x] Application logs visible in CloudWatch
-* [x] Metrics Server working
-* [x] CPU requests configured
-* [x] HPA configured
-* [x] HPA CPU metrics working
-* [x] Node capacity increased to support workloads
-* [x] Application tested through ALB
-* [x] Final validation completed
-
----
-
-# 42. Future Improvements
-
-The following can be implemented as future enhancements:
-
-* Cluster Autoscaler or Karpenter for automatic node scaling
-* HTTPS using AWS Certificate Manager
-* Route 53 custom domain
-* Network Policies
-* Kubernetes Secrets encryption with AWS KMS
-* GitHub webhook integration with Jenkins
-* Blue/Green or Canary deployments
-* Argo CD / GitOps
-* Prometheus and Grafana
-* Automated integration testing
-* Security scanning using Trivy
-* Docker image vulnerability scanning
-* SNS + Slack/Microsoft Teams ChatOps integration
-
----
-
-# 43. Bonus — ChatOps Integration
-
-The assignment's optional ChatOps requirement can be implemented using:
+The completed project provides:
 
 ```text
-Jenkins
-   |
-   v
-Amazon SNS
-   |
-   +---- Deployment Success
-   |
-   +---- Deployment Failure
-   |
-   v
-Slack / Microsoft Teams / Telegram
++--------------------------------------------------+
+|                 COMPLETE CI/CD                   |
++--------------------------------------------------+
+|                                                  |
+| GitHub                                           |
+|    |                                             |
+|    | Webhook                                     |
+|    v                                             |
+| Jenkins                                          |
+|    |                                             |
+|    +--> Docker Build                             |
+|    |                                             |
+|    +--> Dynamic BUILD_NUMBER                     |
+|    |                                             |
+|    +--> Amazon ECR                               |
+|    |                                             |
+|    +--> EKS kubeconfig                           |
+|    |                                             |
+|    +--> Kubernetes Manifest Apply                |
+|    |                                             |
+|    +--> Exact Image Deployment                   |
+|    |                                             |
+|    +--> Rolling Update                           |
+|    |                                             |
+|    +--> Rollout Validation                       |
+|    |                                             |
+|    +--> Application Validation                   |
+|                                                  |
+|                    EKS                           |
+|                     |                            |
+|        +------------+------------+               |
+|        |                         |               |
+|        v                         v               |
+|   ALB / Ingress              Kubernetes         |
+|        |                     Services            |
+|        |                         |               |
+|        +------------+------------+               |
+|                     |                            |
+|              +------+------+                     |
+|              |      |      |                     |
+|              v      v      v                     |
+|          Frontend Hello  Profile                 |
+|                         |                        |
+|                         v                        |
+|                 Secrets Manager                  |
+|                                                  |
++--------------------------------------------------+
 ```
 
-SNS topics can be created for:
-
-```text
-deployment-success
-deployment-failure
-```
-
-Notifications can then be forwarded to the desired messaging platform.
-
----
-
-# 44. Conclusion
-
-This project successfully demonstrates an end-to-end cloud-native deployment of a MERN microservices application on AWS.
-
-The final solution provides:
-
-```text
-Containerization
-      +
-CI/CD
-      +
-Amazon ECR
-      +
-Amazon EKS
-      +
-Kubernetes
-      +
-ALB Ingress
-      +
-AWS Secrets Manager
-      +
-EKS Pod Identity
-      +
-MongoDB Atlas
-      +
-CloudWatch
-      +
-Metrics Server
-      +
-HPA
-```
-
-The application was successfully deployed, exposed through an AWS Application Load Balancer, connected securely to MongoDB Atlas, monitored through CloudWatch, and configured for Kubernetes-based horizontal scaling.
-
-**Final application status: ALL THREE SERVICES WORKING SUCCESSFULLY.**
-
-```text
-Frontend                  ✅
-Hello Service             ✅
-Profile Service           ✅
-MongoDB Atlas             ✅
-ECR                       ✅
-Jenkins CI/CD             ✅
-EKS                       ✅
-ALB Ingress               ✅
-Secrets Manager           ✅
-EKS Pod Identity          ✅
-CSI Secret Mount          ✅
-CloudWatch Logging        ✅
-Metrics Server            ✅
-HPA                       ✅
-Final Validation          ✅
-```
+The implementation uses **dynamic image versioning, Amazon ECR, EKS Access Entry, AWS IAM, AmazonEKSEditPolicy, Kubernetes RBAC, Secrets Store CSI Driver, AWS Secrets Manager, EKS Pod Identity, Amazon Load Balancer Controller, OIDC/IRSA, Application Load Balancer, IP target mode, HPA, Kubernetes rolling deployments, Jenkins CD, and GitHub Webhooks** to provide a complete automated deployment workflow.

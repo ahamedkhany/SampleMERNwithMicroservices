@@ -9,6 +9,7 @@ app.use(cors())
 
 app.use(express.json());
 app.get('/hello', (req,res)=>{
+    console.log('Hello endpoint called');
     res.send({msg: 'Hello World'})
 })
 app.get('/health', (req,res)=>{

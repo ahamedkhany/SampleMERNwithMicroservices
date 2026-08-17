@@ -1645,11 +1645,49 @@ No manual **Build Now** action is required after the webhook is working.
 
 # 37. Testing
 
+
+## Refer the complete, formatted, readable CI CD pipeline log file in 'pipeline-log' folder (jenkins-pipeline-log.pdf)
+
+
+## AWS EKS Cluster
+
+![EKS](./screenshots/aws-eks-cluster.png)
+
+
+-------------------------------------------------
+
+
+## AWS ECR repositories
+
+![Repos](./screenshots/aws-ecr-repositories.png)
+
+-------------------------------------------------
+
+### frontend repo image
+
+![Repos-frontend](./screenshots/aws-ecr-frontend-repo-image.png)
+
+-------------------------------------------------
+
+### hello-service repo image
+
+![Repos-hello](./screenshots/aws-ecr-hello-service-repo-image.png)
+
+-------------------------------------------------
+
+### profile-service repo image
+
+![Repos-profile](./screenshots/aws-ecr-profile-service-repo-image.png)
+
+
+-------------------------------------------------
+
 ## Check EKS Nodes
 
 ```bash
 kubectl get nodes
 ```
+![Nodes](./screenshots/kubectl-get-nodes.png)
 
 ## Check Pods
 
@@ -1657,17 +1695,22 @@ kubectl get nodes
 kubectl get pods
 ```
 
+![Pods](./screenshots/kubectl-get-pods.png)
+
 ## Check Deployments
 
 ```bash
 kubectl get deployments
 ```
+![Deployments](./screenshots/kubectl-get-deployments.png)
 
 ## Check Services
 
 ```bash
 kubectl get services
 ```
+![services](./screenshots/kubectl-get-svc.png)
+
 
 ## Check HPA
 
@@ -1675,35 +1718,80 @@ kubectl get services
 kubectl get hpa
 ```
 
+![hpa](./screenshots/kubectl-get-hpa.png)
+
+
 ## Check Ingress
 
 ```bash
 kubectl get ingress
 ```
+![ingress](./screenshots/kubectl-get-ingress.png)
+
 
 ## Check Resource Usage
 
 ```bash
 kubectl top pods
 ```
+![metrics](./screenshots/kubectl-top-pods.png)
 
-## Check Rollout
 
-```bash
-kubectl rollout status deployment/frontend
-kubectl rollout status deployment/hello-service
-kubectl rollout status deployment/profile-service
-```
+## Check Cloud watch
 
-## Check Logs
+![cloudwatch](./screenshots/aws-cloudwatch.png)
 
-```bash
-kubectl logs deployment/frontend
-kubectl logs deployment/hello-service
-kubectl logs deployment/profile-service
-```
+## Check logs in Cloud watch. eg: hello-service
 
-Finally, access the application through the configured Application Load Balancer/Ingress endpoint in a browser.
+![cloudwatch hello-service](./screenshots/aws-cloudwatch-hello-service.png)
+
+
+## Webhook
+
+![Webhook](./screenshots/webhook-triggered.png)
+
+
+## Commit the code in repo and check pipeline
+
+![Jenkins pipeline triggered](./screenshots/jenkins-pipeline-triggered-by-github-push.png)
+
+![pipeline polling](./screenshots/jenkins-pipeline-polling-log.png)
+
+### Pipeline screenshots
+
+![pipeline start](./screenshots/jenkins-pipeline-started.png)
+
+![pipeline success](./screenshots/jenkins-pipeline-success.png)
+
+
+
+----------------------------------------------------------
+
+
+# Finally, access the application through the configured Application Load Balancer/Ingress endpoint in a browser.
+
+## Open Browser and run using Load Balancer DNS name provided in ingress
+
+### Welcome frontend page
+
+![Frontend](./screenshots/output-frontend.png)
+
+----------------------------------------------------------
+
+### hello-service
+
+![hello](./screenshots/output-hello.png)
+
+----------------------------------------------------------
+
+### profile-service
+
+![profile/fetchUser](./screenshots/output-profile-fetchUser.png)
+
+
+----------------------------------------------------------
+
+
 
 ---
 

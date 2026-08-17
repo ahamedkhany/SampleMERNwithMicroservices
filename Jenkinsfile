@@ -38,6 +38,12 @@ pipeline {
                         returnStdout: true
                     ).trim()
 
+                    /*
+                     * Dynamic and traceable image version.
+                     *
+                     * Example:
+                     * build-28-a1b2c3d
+                     */
                     env.IMAGE_TAG =
                         "build-${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
 
@@ -210,11 +216,24 @@ pipeline {
         }
 
         // ============================================================
-        // CD - CONFIGURE EKS
+        // CD - COMPLETE EKS DEPLOYMENT
         // ============================================================
 
-        stage('Configure Kubernetes') {
+        stage('CD - Deploy to EKS') {
             steps {
+
+                /*
+                 * One credential scope for the complete CD process.
+                 *
+                 * AWS credentials are required because:
+                 *
+                 * 1. aws eks update-kubeconfig
+                 * 2. kubectl uses AWS authentication to communicate
+                 *    with the EKS API server.
+                 *
+                 * Keeping this block around the entire CD process
+                 * avoids repeating withCredentials for every stage.
+                 */
 
                 withCredentials([
                     usernamePassword(
@@ -225,6 +244,17 @@ pipeline {
                 ]) {
 
                     sh '''
+                        set -e
+
+                        echo "================================================"
+                        echo "CD - DEPLOY TO EKS"
+                        echo "================================================"
+
+                        # ------------------------------------------------
+                        # 1. Configure kubectl for EKS
+                        # ------------------------------------------------
+
+                        echo ""
                         echo "Configuring kubectl for EKS..."
 
                         aws eks update-kubeconfig \
@@ -236,154 +266,158 @@ pipeline {
                         kubectl config current-context
 
                         echo ""
-                        echo "Kubernetes Deployments:"
+                        echo "Checking Kubernetes deployment access:"
                         kubectl get deployments -n default
 
+                        # ------------------------------------------------
+                        # 2. Apply Kubernetes manifests
+                        # ------------------------------------------------
+
+                        echo ""
+                        echo "================================================"
+                        echo "APPLYING KUBERNETES MANIFESTS"
+                        echo "================================================"
+
+                        echo "Manifest path: ${K8S_MANIFEST_PATH}"
+
+                        kubectl apply \
+                          -f ${K8S_MANIFEST_PATH}
+
+                        # ------------------------------------------------
+                        # 3. Deploy exact image version
+                        # ------------------------------------------------
+
+                        echo ""
+                        echo "================================================"
+                        echo "DEPLOYING EXACT IMAGE VERSION"
+                        echo "================================================"
+
+                        echo "Image tag: ${IMAGE_TAG}"
+
+                        echo ""
+                        echo "Updating Frontend deployment..."
+
+                        kubectl set image deployment/frontend \
+                          frontend=${FRONTEND_IMAGE}:${IMAGE_TAG}
+
+                        echo ""
+                        echo "Updating Hello Service deployment..."
+
+                        kubectl set image deployment/hello-service \
+                          hello-service=${HELLO_IMAGE}:${IMAGE_TAG}
+
+                        echo ""
+                        echo "Updating Profile Service deployment..."
+
+                        kubectl set image deployment/profile-service \
+                          profile-service=${PROFILE_IMAGE}:${IMAGE_TAG}
+
+                        # ------------------------------------------------
+                        # 4. Wait for Kubernetes rollout
+                        # ------------------------------------------------
+
+                        echo ""
+                        echo "================================================"
+                        echo "WAITING FOR ROLLOUT"
+                        echo "================================================"
+
+                        echo ""
+                        echo "Frontend rollout..."
+
+                        kubectl rollout status \
+                          deployment/frontend \
+                          --timeout=300s
+
+                        echo ""
+                        echo "Hello Service rollout..."
+
+                        kubectl rollout status \
+                          deployment/hello-service \
+                          --timeout=300s
+
+                        echo ""
+                        echo "Profile Service rollout..."
+
+                        kubectl rollout status \
+                          deployment/profile-service \
+                          --timeout=300s
+
+                        # ------------------------------------------------
+                        # 5. Validate deployment
+                        # ------------------------------------------------
+
+                        echo ""
+                        echo "================================================"
+                        echo "KUBERNETES DEPLOYMENT VALIDATION"
+                        echo "================================================"
+
+                        echo ""
+                        echo "Deployments:"
+
+                        kubectl get deployments -n default
+
+                        echo ""
+                        echo "Pods:"
+
+                        kubectl get pods -n default -o wide
+
+                        echo ""
+                        echo "Services:"
+
+                        kubectl get services -n default
+
+                        echo ""
+                        echo "Ingress:"
+
+                        kubectl get ingress -n default
+
+                        # ------------------------------------------------
+                        # 6. Verify exact deployed images
+                        # ------------------------------------------------
+
+                        echo ""
+                        echo "================================================"
+                        echo "DEPLOYED IMAGES"
+                        echo "================================================"
+
+                        echo ""
+                        echo "Frontend:"
+                        kubectl get deployment/frontend \
+                          -n default \
+                          -o jsonpath='{.spec.template.spec.containers[0].image}'
+                        echo ""
+
+                        echo ""
+                        echo "Hello Service:"
+                        kubectl get deployment/hello-service \
+                          -n default \
+                          -o jsonpath='{.spec.template.spec.containers[0].image}'
+                        echo ""
+
+                        echo ""
+                        echo "Profile Service:"
+                        kubectl get deployment/profile-service \
+                          -n default \
+                          -o jsonpath='{.spec.template.spec.containers[0].image}'
+                        echo ""
+
+                        # ------------------------------------------------
+                        # 7. Verify expected image tag
+                        # ------------------------------------------------
+
+                        echo ""
+                        echo "================================================"
+                        echo "EXPECTED IMAGE TAG"
+                        echo "================================================"
+
+                        echo "${IMAGE_TAG}"
+
+                        echo ""
+                        echo "================================================"
+                        echo "CD DEPLOYMENT COMPLETED SUCCESSFULLY"
+                        echo "================================================"
                     '''
                 }
-            }
-        }
-
-        // ============================================================
-        // CD - APPLY KUBERNETES MANIFESTS
-        // ============================================================
-
-        stage('Apply Kubernetes Manifests') {
-            steps {
-
-                echo "Applying Kubernetes manifests from ${K8S_MANIFEST_PATH}..."
-
-                sh '''
-                    kubectl apply \
-                      -f ${K8S_MANIFEST_PATH}
-                '''
-            }
-        }
-
-        // ============================================================
-        // CD - DEPLOY EXACT IMAGE VERSION
-        // ============================================================
-
-        stage('Deploy Exact Image Version') {
-            steps {
-
-                echo "Deploying exact image version: ${IMAGE_TAG}"
-
-                sh '''
-                    echo "Updating Frontend deployment..."
-
-                    kubectl set image deployment/frontend \
-                      frontend=${FRONTEND_IMAGE}:${IMAGE_TAG}
-
-                    echo ""
-                    echo "Updating Hello Service deployment..."
-
-                    kubectl set image deployment/hello-service \
-                      hello-service=${HELLO_IMAGE}:${IMAGE_TAG}
-
-                    echo ""
-                    echo "Updating Profile Service deployment..."
-
-                    kubectl set image deployment/profile-service \
-                      profile-service=${PROFILE_IMAGE}:${IMAGE_TAG}
-                '''
-            }
-        }
-
-        // ============================================================
-        // CD - ROLLOUT
-        // ============================================================
-
-        stage('Wait for Rollout') {
-            steps {
-
-                echo 'Waiting for Kubernetes deployments to complete...'
-
-                sh '''
-                    echo "Frontend rollout..."
-
-                    kubectl rollout status \
-                      deployment/frontend \
-                      --timeout=300s
-
-                    echo ""
-                    echo "Hello Service rollout..."
-
-                    kubectl rollout status \
-                      deployment/hello-service \
-                      --timeout=300s
-
-                    echo ""
-                    echo "Profile Service rollout..."
-
-                    kubectl rollout status \
-                      deployment/profile-service \
-                      --timeout=300s
-                '''
-            }
-        }
-
-        // ============================================================
-        // CD - VALIDATION
-        // ============================================================
-
-        stage('Validate Deployment') {
-            steps {
-
-                sh '''
-                    echo "================================================"
-                    echo "KUBERNETES DEPLOYMENT VALIDATION"
-                    echo "================================================"
-
-                    echo ""
-                    echo "Deployments:"
-                    kubectl get deployments
-
-                    echo ""
-                    echo "Pods:"
-                    kubectl get pods -o wide
-
-                    echo ""
-                    echo "Services:"
-                    kubectl get services
-
-                    echo ""
-                    echo "Ingress:"
-                    kubectl get ingress
-
-                    echo ""
-                    echo "------------------------------------------------"
-                    echo "DEPLOYED IMAGES"
-                    echo "------------------------------------------------"
-
-                    echo ""
-                    echo "Frontend:"
-                    kubectl get deployment/frontend \
-                      -o jsonpath='{.spec.template.spec.containers[0].image}'
-                    echo ""
-
-                    echo ""
-                    echo "Hello Service:"
-                    kubectl get deployment/hello-service \
-                      -o jsonpath='{.spec.template.spec.containers[0].image}'
-                    echo ""
-
-                    echo ""
-                    echo "Profile Service:"
-                    kubectl get deployment/profile-service \
-                      -o jsonpath='{.spec.template.spec.containers[0].image}'
-                    echo ""
-
-                    echo ""
-                    echo "------------------------------------------------"
-                    echo "EXPECTED IMAGE TAG"
-                    echo "------------------------------------------------"
-
-                    echo "${IMAGE_TAG}"
-
-                    echo ""
-                    echo "================================================"
-                '''
             }
         }
     }

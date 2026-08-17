@@ -397,7 +397,7 @@ pipeline {
 
             echo '''
             ============================================================
-                         CI/CD PIPELINE SUCCESSFUL
+                         CI/CD PIPELINE SUCCESSFUL!
             ============================================================
 
             Source code checked out successfully.

@@ -2,7 +2,7 @@
 
 ## 1. Project Overview
 
-This project demonstrates the containerization, CI/CD automation, deployment, monitoring, logging, secret management, ingress routing, and autoscaling of a MERN-based microservices application on **Amazon Web Services (AWS)** using:
+This project demonstrates the containerization, CI/CD automation, deployment, monitoring, logging, secret management, ingress routing, and autoscaling of a MERN-based microservices application on **Amazon Web Services (AWS)** using::
 
 * Docker
 * Amazon ECR

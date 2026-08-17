@@ -236,8 +236,9 @@ pipeline {
                         kubectl config current-context
 
                         echo ""
-                        echo "EKS Nodes:"
-                        kubectl get nodes
+                        echo "Kubernetes Deployments:"
+                        kubectl get deployments -n default
+
                     '''
                 }
             }

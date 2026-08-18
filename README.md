@@ -1641,13 +1641,15 @@ Application Updated
 
 No manual **Build Now** action is required after the webhook is working.
 
----
+-------------------------------------------------
 
 # 37. Testing
 
+-------------------------------------------------
 
 ## Refer the complete, formatted, readable CI CD pipeline log file in 'pipeline-log' folder (jenkins-pipeline-log.pdf)
 
+-------------------------------------------------
 
 ## AWS EKS Cluster
 
@@ -1657,9 +1659,27 @@ No manual **Build Now** action is required after the webhook is working.
 -------------------------------------------------
 
 
+## AWS Load Balancer
+
+![AWS Load Balancer](./screenshots/aws-load-balancer.png)
+
+
+-------------------------------------------------
+
+
+### AWS Load Balancer Resource Map - refer health checks and target groups mapping with Load Balancer.
+
+![AWS Load Balancer Resource Map](./screenshots/aws-load-balancer-resource-map.png)
+
+
+
+-------------------------------------------------
+
+
 ## AWS ECR repositories
 
 ![Repos](./screenshots/aws-ecr-repositories.png)
+
 
 -------------------------------------------------
 
@@ -1675,6 +1695,7 @@ No manual **Build Now** action is required after the webhook is working.
 
 -------------------------------------------------
 
+
 ### profile-service repo image
 
 ![Repos-profile](./screenshots/aws-ecr-profile-service-repo-image.png)
@@ -1685,6 +1706,26 @@ No manual **Build Now** action is required after the webhook is working.
 ## AWS Secrets Manager
 
 ![Secrets Manager](./screenshots/aws-secrets-manager.png)
+
+
+-------------------------------------------------
+
+
+### AWS Secrets Manager validation
+
+
+```bash
+kubectl get secrets
+```
+
+```bash
+aws secretsmanager list-secrets `
+  --region us-east-1 `
+  --query "SecretList[].{Name:Name,ARN:ARN}" `
+  --output table
+```
+![Secrets Manager Validation](./screenshots/aws-secrets-manager-check.png)
+
 
 
 -------------------------------------------------
